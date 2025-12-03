@@ -4,6 +4,9 @@ import viteLogo from '/vite.svg'
 import { BsTreeFill } from "react-icons/bs";
 import './App.css'
 
+import DeleteIcon from '@mui/icons-material/Delete';
+import IconButton from '@mui/material/IconButton';
+
 function App() {
   const [count, setCount] = useState(0)
 
@@ -17,7 +20,8 @@ function App() {
           <img src={reactLogo} className="logo react" alt="React logo" />
         </a>
       </div>
-      <h1>- <span><BsTreeFill /></span> ระบบจัดการร้านขายต้นไม้ -</h1>
+      <h1>- <BsTreeFill />ระบบจัดการร้านขายต้นไม้ -</h1>
+
       <div className="card">
         <button onClick={() => setCount((count) => count + 1)}>
           count is {count}
@@ -26,8 +30,9 @@ function App() {
           Edit <code>src/App.jsx</code> and save to test HMR
         </p>
       </div>
+
       <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
+        Click on the Vite and React logos to learn more <IconButton> <DeleteIcon /> </IconButton>
       </p>
     </>
   )
