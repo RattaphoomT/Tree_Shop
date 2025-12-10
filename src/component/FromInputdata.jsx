@@ -27,9 +27,9 @@ import IconButton from "@mui/material/IconButton";
 const FromInputdata = () => {
   const [form, setForm] = useState({});
   const [data, setData] = useState([]);
+  const refTable = collection(db,"Tree");
 
   useEffect(() => {
-    // loadData();
     const unsub = loadDataRealtime();
     return () => {
       unsub();
@@ -37,7 +37,7 @@ const FromInputdata = () => {
   }, []);
 
   const loadDataRealtime = () => {
-    const unsub = onSnapshot(collection(db, "Tree"), (snapshot) => {
+    const unsub = onSnapshot(refTable, (snapshot) => {
       const newData = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -70,7 +70,7 @@ const FromInputdata = () => {
   };
 
   const handleDelete = async (id) => {
-    await deleteDoc(doc(collection(db, "Tree"), id))
+    await deleteDoc(doc(refTable, id))
       .then((res) => {
         console.log(res);
         // loadData();
@@ -79,7 +79,7 @@ const FromInputdata = () => {
   };
 
   const handleAddData = async () => {
-    await addDoc(collection(db, "Tree"), form)
+    await addDoc(refTable, form)
       .then((res) => {
         console.log(res);
         setForm({
@@ -95,6 +95,7 @@ const FromInputdata = () => {
 
   return (
     <>
+    <h1 align="center">ระบบจัดการร้านขายต้นไม้</h1>
       <div>
         <Container maxWidth="sm">
           <Stack spacing={2} direction="column">
