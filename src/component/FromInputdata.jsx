@@ -23,11 +23,12 @@ import {
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import IconButton from "@mui/material/IconButton";
+import { Link } from "react-router-dom";
 
 const FromInputdata = () => {
   const [form, setForm] = useState({});
   const [data, setData] = useState([]);
-  const refTable = collection(db,"Tree");
+  const refTable = collection(db, "Tree");
 
   useEffect(() => {
     const unsub = loadDataRealtime();
@@ -95,7 +96,7 @@ const FromInputdata = () => {
 
   return (
     <>
-    <h1 align="center">ระบบจัดการร้านขายต้นไม้</h1>
+      <h1 align="center">ระบบจัดการร้านขายต้นไม้</h1>
       <div>
         <Container maxWidth="sm">
           <Stack spacing={2} direction="column">
@@ -150,6 +151,13 @@ const FromInputdata = () => {
               ))}
             </TableBody>
           </Table>
+          <div maxWidth="sm">
+            <Link to="/Dasborad">
+              <Button fullWidth variant="contained">
+                ไปหน้าแสดงรายละเอียด
+              </Button>
+            </Link>
+          </div>
         </Container>
       </div>
     </>
