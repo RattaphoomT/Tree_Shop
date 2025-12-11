@@ -1,24 +1,19 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import AdminLayout from "./layout/AdminLayout";
-import Dashboard from "./pages/Dashboard";
-import POS from "./pages/POS";
-import ProductsAdmin from "./pages/ProductsAdmin";
-import Customers from "./pages/Customers";
+import FromInputdata from "./component/FromInputdata";
+import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
+import Dasborad from "./component/Dasborad";
 
-const App = () => (
-  <BrowserRouter>
-    <Routes>
-      <Route path="/" element={<AdminLayout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="pos" element={<POS />} />
-        <Route path="products-admin" element={<ProductsAdmin />} />
-        <Route path="customers" element={<Customers />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Route>
-    </Routes>
-  </BrowserRouter>
-);
+const App = () => {
+  return (
+    <>
+      <Router>
+        <Routes>
+          <Route path="/" element={<FromInputdata />} />
+          <Route path="/Dasborad" element={<Dasborad />} />
+        </Routes>
+      </Router>
+    </>
+  );
+};
 
 export default App;
