@@ -1,18 +1,16 @@
 import React from "react";
-import FromInputdata from "./component/FromInputdata";
-import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
-import Dasborad from "./component/Dasborad";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Dashboard from "./components/Dasborad";
+import Product from "./pages/Product";
 
 const App = () => {
   return (
-    <>
-      <Router>
-        <Routes>
-          <Route path="/" element={<FromInputdata />} />
-          <Route path="/Dasborad" element={<Dasborad />} />
-        </Routes>
-      </Router>
-    </>
+    <Router>
+      <Routes>
+        <Route path="/" element={<Product />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+      </Routes>
+    </Router>
   );
 };
 
