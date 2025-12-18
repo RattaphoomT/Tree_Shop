@@ -1,6 +1,7 @@
 import React from 'react'
 import Layout from '../Layout/Layout'
 import { Box } from '@mui/material'
+import POS from '../components/POS'
 
 const Product = () => {
   return (
@@ -8,7 +9,8 @@ const Product = () => {
       <Box>
         <Box sx={{ mb: 3 }}>
           {/* contain */}
-          <h1>Content - รักนะทับทิม</h1>
+          {/* <h1>Content - รักนะทับทิม</h1>    */}
+          <POS/>
         </Box>
       </Box>
     </Layout>

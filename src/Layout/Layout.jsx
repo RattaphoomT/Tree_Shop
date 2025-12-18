@@ -28,7 +28,7 @@ export default function Layout({ children }) {
             onClick={handleToggleSidebar}
             sx={{ mr: 2 }}
           >
-            {sidebarOpen ? <CloseIcon /> : <MenuIcon />}
+            {sidebarOpen ? <MenuIcon /> : <MenuIcon />}
           </IconButton>
           <Typography variant="h6" component="div" sx={{ fontWeight: 700 }}>
             ระบบจัดการร้านต้นไม้
