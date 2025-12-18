@@ -113,13 +113,29 @@ const POS = () => {
   // };
 
   return (
-    <Box sx={{ display: "flex", gap: 3, mt: 2 }}>
+    <Box
+      sx={{
+        display: "flex",
+        gap: 4,
+        mt: 4,
+        px: 3,
+        pb: 4,
+        minHeight: "100vh",
+      }}
+    >
       {/* สินค้า */}
       <Box sx={{ flex: 2 }}>
-        <Typography variant="h5" sx={{ mb: 2, fontWeight: 700 }}>
+        <Typography
+          variant="h5"
+          sx={{
+            mb: 3,
+            fontWeight: 800,
+            letterSpacing: 1,
+          }}
+        >
           สินค้าทั้งหมด
         </Typography>
-        <Grid container spacing={2}>
+        <Grid container spacing={3} display="flex" alignItems="center" > 
           {sampleProducts.map((product) => (
             <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
               <Card
@@ -127,31 +143,57 @@ const POS = () => {
                   height: "100%",
                   display: "flex",
                   flexDirection: "column",
+                  borderRadius: 3,
+                  boxShadow: "0 4px 24px 0 rgba(60,72,88,0.08)",
+                  transition: "transform 0.2s, box-shadow 0.2s",
+                  "&:hover": {
+                    transform: "translateY(-6px) scale(1.03)",
+                    boxShadow: "0 8px 32px 0 rgba(60,72,88,0.16)",
+                  },
+                  background: "#fff",
                 }}
               >
                 <CardMedia
                   component="img"
-                  height="120"
+                  height="150"
                   image={product.image}
                   alt={product.name}
-                  sx={{ objectFit: "cover" }}
+                  sx={{
+                    objectFit: "cover",
+                    borderTopLeftRadius: 12,
+                    borderTopRightRadius: 12,
+                  }}
                 />
                 <CardContent sx={{ flexGrow: 1 }}>
                   <Typography
                     variant="subtitle1"
-                    sx={{ fontWeight: 600 }}
+                    sx={{ fontWeight: 700, fontSize: 18, mb: 0.5 }}
                     noWrap
                   >
                     {product.name}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ fontSize: 15 }}
+                  >
                     {product.price.toLocaleString()} บาท
                   </Typography>
                 </CardContent>
                 <Button
                   variant="contained"
                   color="success"
-                  sx={{ m: 2, mt: "auto" }}
+                  sx={{
+                    m: 2,
+                    mt: "auto",
+                    fontWeight: 700,
+                    borderRadius: 2,
+                    boxShadow: "0 2px 8px 0 rgba(76,175,80,0.10)",
+                    fontSize: 16,
+                    py: 1,
+                    transition: "background 0.2s",
+                    "&:hover": { background: "#2e7d32" },
+                  }}
                   onClick={() => handleAddToCart(product)}
                 >
                   เพิ่มลงตะกร้า
@@ -163,29 +205,54 @@ const POS = () => {
       </Box>
 
       {/* ตะกร้าสินค้า */}
-      <Box sx={{ flex: 1, minWidth: 320 }}>
-        <Paper sx={{ p: 2, position: "sticky", top: 24 }}>
+      <Box sx={{ flex: 1, minWidth: 340 }}>
+        <Paper
+          elevation={6}
+          sx={{
+            p: 3,
+            position: "sticky",
+            top: 32,
+            borderRadius: 4,
+            background: "#ffffffff",
+            boxShadow: "0 6px 32px 0 rgba(60,72,88,0.10)",
+          }}
+        >
           <Typography
             variant="h6"
-            sx={{ fontWeight: 700, mb: 2 }}
-            display="flex"
-            alignItems="center"
+            sx={{
+              fontWeight: 800,
+              mb: 2,
+              display: "flex",
+              alignItems: "center",
+              fontSize: 22,
+              letterSpacing: 1,
+            }}
           >
-            <ShoppingCartIcon sx={{ mr: 1, color: "#4caf50" }} />
+            <ShoppingCartIcon sx={{ mr: 1, color: "#43a047", fontSize: 28 }} />
             ตะกร้าสินค้า
           </Typography>
           <Divider sx={{ mb: 2 }} />
           <List>
             {cart.length === 0 ? (
-              <Typography color="text.secondary" align="center">
+              <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
                 ไม่มีสินค้าในตะกร้า
               </Typography>
             ) : (
               cart.map((item) => (
-                <ListItem key={item.id} alignItems="flex-start" sx={{ py: 1 }}>
+                <ListItem
+                  key={item.id}
+                  alignItems="flex-start"
+                  sx={{
+                    py: 1.5,
+                    borderRadius: 2,
+                    mb: 1,
+                    background: "#fff",
+                    boxShadow: "0 2px 8px 0 rgba(60,72,88,0.04)",
+                  }}
+                >
                   <ListItemText
                     primary={
-                      <Typography sx={{ fontWeight: 600 }}>
+                      <Typography sx={{ fontWeight: 700, fontSize: 17 }}>
                         {item.name}
                       </Typography>
                     }
@@ -202,6 +269,10 @@ const POS = () => {
                         <IconButton
                           size="small"
                           onClick={() => handleRemoveFromCart(item.id)}
+                          sx={{
+                            background: "#f1f8e9",
+                            "&:hover": { background: "#c8e6c9" },
+                          }}
                         >
                           <RemoveIcon />
                         </IconButton>
@@ -216,15 +287,31 @@ const POS = () => {
                             min: 1,
                             style: { width: 40, textAlign: "center" },
                           }}
-                          sx={{ mx: 1 }}
+                          sx={{
+                            mx: 1,
+                            "& .MuiInputBase-root": {
+                              borderRadius: 2,
+                              fontWeight: 700,
+                            },
+                          }}
                         />
                         <IconButton
                           size="small"
                           onClick={() => handleAddToCart(item)}
+                          sx={{
+                            background: "#f1f8e9",
+                            "&:hover": { background: "#c8e6c9" },
+                          }}
                         >
                           <AddIcon />
                         </IconButton>
-                        <Typography sx={{ ml: 2 }}>
+                        <Typography
+                          sx={{
+                            ml: 2,
+                            fontWeight: 600,
+                            color: "#388e3c",
+                          }}
+                        >
                           {item.price * item.quantity} บาท
                         </Typography>
                       </Box>
@@ -235,6 +322,10 @@ const POS = () => {
                       edge="end"
                       color="error"
                       onClick={() => handleDeleteFromCart(item.id)}
+                      sx={{
+                        background: "#fff0f1",
+                        "&:hover": { background: "#ffcdd2" },
+                      }}
                     >
                       <DeleteIcon />
                     </IconButton>
@@ -253,8 +344,12 @@ const POS = () => {
               gap: 1,
             }}
           >
-            <Typography>รวมทั้งหมด</Typography>
-            <Typography sx={{ fontWeight: 700 }}>
+            <Typography sx={{ fontWeight: 600, fontSize: 17 }}>
+              รวมทั้งหมด
+            </Typography>
+            <Typography
+              sx={{ fontWeight: 800, fontSize: 20, color: "#388e3c" }}
+            >
               {total.toLocaleString()} บาท
             </Typography>
           </Box>
@@ -263,8 +358,18 @@ const POS = () => {
             color="success"
             fullWidth
             disabled={cart.length === 0}
-            sx={{ mt: 1, fontWeight: 700 }}
-            // onClick={handleCheckout} // TODO: เชื่อมต่อฐานข้อมูลเพื่อบันทึกการขาย
+            sx={{
+              mt: 2,
+              fontWeight: 800,
+              fontSize: 18,
+              py: 1.2,
+              borderRadius: 3,
+              boxShadow: "0 2px 8px 0 rgba(76,175,80,0.10)",
+              letterSpacing: 1,
+              transition: "background 0.2s",
+              "&:hover": { background: "#2e7d32" },
+            }}
+            // onClick={handleCheckout}
           >
             ชำระเงิน
           </Button>
