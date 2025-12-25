@@ -116,26 +116,41 @@ const POS = () => {
     <Box
       sx={{
         display: "flex",
-        gap: 4,
-        mt: 4,
-        px: 3,
-        pb: 4,
-        minHeight: "100vh",
+        gap: 1.5,
+        px: 1,
+        pb: 0,
+        overflow: "hidden", // ป้องกันการ scroll ทั้งหน้าหลัก
       }}
     >
       {/* สินค้า */}
-      <Box sx={{ flex: 2 }}>
+      <Box
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          overflowY: "auto", // ให้เลื่อนได้เฉพาะฝั่งสินค้า
+          maxHeight: "80vh",
+          pr: 1,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         <Typography
           variant="h5"
           sx={{
             mb: 3,
             fontWeight: 800,
             letterSpacing: 1,
+            flexShrink: 0,
+            position: "sticky",
+            top: 0,
+            zIndex: 2,
+            background: "aliceblue",
+            py: 2,
           }}
         >
           สินค้าทั้งหมด
         </Typography>
-        <Grid container spacing={3} display="flex" alignItems="center" > 
+        <Grid container spacing={3} display="flex" alignItems="center">
           {sampleProducts.map((product) => (
             <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
               <Card
@@ -186,7 +201,7 @@ const POS = () => {
                   sx={{
                     m: 2,
                     mt: "auto",
-                    fontWeight: 700,
+                    fontWeight: 600,
                     borderRadius: 2,
                     boxShadow: "0 2px 8px 0 rgba(76,175,80,0.10)",
                     fontSize: 16,
@@ -203,24 +218,36 @@ const POS = () => {
           ))}
         </Grid>
       </Box>
-
       {/* ตะกร้าสินค้า */}
-      <Box sx={{ flex: 1, minWidth: 340 }}>
+      <Box
+        sx={{
+          width: 340,
+          maxWidth: 340,
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "flex-start",
+          background: "transparent",
+          overflow: "hidden", // ป้องกันการ scroll ฝั่งตะกร้า
+        }}
+      >
         <Paper
           elevation={6}
           sx={{
             p: 3,
-            position: "sticky",
-            top: 32,
             borderRadius: 4,
-            background: "#ffffffff",
+            background: "#fff",
             boxShadow: "0 6px 32px 0 rgba(60,72,88,0.10)",
+            width: "100%",
+            height: "73vh",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden", // ป้องกันการ scroll ทั้ง Paper
           }}
         >
           <Typography
             variant="h6"
             sx={{
-              fontWeight: 800,
+              fontWeight: 600,
               mb: 2,
               display: "flex",
               alignItems: "center",
@@ -232,7 +259,14 @@ const POS = () => {
             ตะกร้าสินค้า
           </Typography>
           <Divider sx={{ mb: 2 }} />
-          <List>
+          <List
+            sx={{
+              flex: 1,
+              overflowY: "auto", // ให้ scroll ได้เฉพาะรายการสินค้าในตะกร้า
+              minHeight: 120,
+              maxHeight: "none",
+            }}
+          >
             {cart.length === 0 ? (
               <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
                 ไม่มีสินค้าในตะกร้า
@@ -252,9 +286,15 @@ const POS = () => {
                 >
                   <ListItemText
                     primary={
-                      <Typography sx={{ fontWeight: 700, fontSize: 17 }}>
-                        {item.name}
-                      </Typography>
+                      <>
+                        <Typography sx={{ fontWeight: 700, fontSize: 18 }}>
+                          {item.name}
+                        </Typography>
+
+                        <Typography sx={{ fontWeight: 500, fontSize: 14, color: 'gray' }}>
+                          ชิ้นละ {item.price} บาท
+                        </Typography>
+                      </>
                     }
                     secondary={
                       <Box
@@ -263,7 +303,7 @@ const POS = () => {
                           alignItems: "center",
                           mt: 1,
                           flexWrap: "wrap",
-                          gap: 1,
+                          gap: 0.5,
                         }}
                       >
                         <IconButton
@@ -305,6 +345,7 @@ const POS = () => {
                         >
                           <AddIcon />
                         </IconButton>
+
                         <Typography
                           sx={{
                             ml: 2,
@@ -312,14 +353,14 @@ const POS = () => {
                             color: "#388e3c",
                           }}
                         >
-                          {item.price * item.quantity} บาท
+                          รวม {item.price * item.quantity} บาท
                         </Typography>
                       </Box>
                     }
                   />
                   <ListItemSecondaryAction>
                     <IconButton
-                      edge="end"
+                      edge="center"
                       color="error"
                       onClick={() => handleDeleteFromCart(item.id)}
                       sx={{

@@ -31,7 +31,7 @@ export default function Sidebar({ open, onClose }) {
   const items = [
     { to: "/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
     { to: "/pos", label: "POS", icon: <PointOfSaleIcon /> },
-    { to: "/products", label: "สินค้า", icon: <Inventory2Icon /> },
+    { to: "/product", label: "สินค้า", icon: <Inventory2Icon /> },
     { to: "/orders", label: "คำสั่งซื้อ", icon: <ShoppingCartIcon /> },
     { to: "/customers", label: "ลูกค้า", icon: <PeopleIcon /> },
   ];
@@ -119,16 +119,15 @@ export default function Sidebar({ open, onClose }) {
                   justifyContent: isExpanded ? "flex-start" : "center",
                   backgroundColor: selected ? "#4caf50" : "transparent",
                   color: selected ? "white" : "rgba(255,255,255,0.7)",
-                  transition: "all 0.2s ease",
+                  transition: "all 0.5s ease",
                   "&.Mui-selected": {
                     bgcolor: "#4caf50",
                     color: "white",
-                    boxShadow: "0 4px 12px rgba(76, 175, 80, 0.3)",
                     "& .MuiListItemIcon-root": { color: "white" },
                   },
                   "&:hover": {
                     bgcolor: selected ? "#4caf50" : "rgba(76, 175, 80, 0.2)",
-                    color: "white",
+                    color: "white", 
                   },
                 }}
               >
