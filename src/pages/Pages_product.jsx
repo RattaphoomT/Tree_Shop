@@ -1,6 +1,7 @@
 import React from "react";
 import Layout from '../Layout/Layout'
 import { Box } from '@mui/material'
+import Product from "../components/Product";
 
 
 const Pages_product = () => {
@@ -8,7 +9,7 @@ const Pages_product = () => {
     <Layout>
       <Box sx={{  overflow: "hidden" }}>
           {/* contain */}
-            <h1>Content - สินค้า</h1>
+            <Product/>
       </Box>
     </Layout>
   );

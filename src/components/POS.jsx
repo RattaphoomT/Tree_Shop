@@ -150,7 +150,7 @@ const POS = () => {
         >
           สินค้าทั้งหมด
         </Typography>
-        <Grid container spacing={3} display="flex" alignItems="center">
+        <Grid container spacing={3} display="flex" alignItems="center" >
           {sampleProducts.map((product) => (
             <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
               <Card
@@ -278,10 +278,12 @@ const POS = () => {
                   alignItems="flex-start"
                   sx={{
                     py: 1.5,
+                    m: 1,
+                    width: "auto",
                     borderRadius: 2,
-                    mb: 1,
+                    mb: 1,  
                     background: "#fff",
-                    boxShadow: "0 2px 8px 0 rgba(60,72,88,0.04)",
+                    boxShadow: "2px 2px 8px 4px rgba(148, 148, 148, 0.1)",
                   }}
                 >
                   <ListItemText
