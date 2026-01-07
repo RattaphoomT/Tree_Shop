@@ -10,7 +10,7 @@ import {
   doc,
 } from "firebase/firestore";
 
-// --- SweetAlert2 Import (ใช้เฉพาะยืนยันการลบ) ---
+// --- SweetAlert2 Import ---
 import Swal from "sweetalert2";
 
 // --- Material UI Imports ---
@@ -72,8 +72,6 @@ const Product = () => {
   };
   
   const [form, setForm] = useState(initialFormState);
-  
-  // State สำหรับเก็บ Error ของแต่ละ field
   const [errors, setErrors] = useState({}); 
 
   const [data, setData] = useState([]); 
@@ -82,6 +80,9 @@ const Product = () => {
   // --- Filter & Search State ---
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all"); 
+  
+  // ✅ 1. เพิ่ม State สำหรับกรองหมวดหมู่
+  const [filterCategory, setFilterCategory] = useState("all"); 
 
   // UI States
   const [open, setOpen] = useState(false);
@@ -89,14 +90,12 @@ const Product = () => {
   const [openCatModal, setOpenCatModal] = useState(false); 
   const [newCategoryName, setNewCategoryName] = useState(""); 
 
-  // --- Snackbar State ---
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
     severity: "success"
   });
 
-  // Firestore References
   const refProductTable = collection(db, "Products");
   const refCategoryTable = collection(db, "Categories");
 
@@ -130,11 +129,16 @@ const Product = () => {
     const pName = item.product_name ? item.product_name.toLowerCase() : "";
     const pBarcode = item.barcode ? item.barcode.toString() : "";
     const pLoc = item.location ? item.location.toLowerCase() : "";
+    
+    // Search Term Filter
     const matchesSearch = pName.includes(term) || pBarcode.includes(term) || pLoc.includes(term);
 
+    // ✅ 2. เพิ่ม Logic กรองหมวดหมู่ (เทียบ ID)
+    const matchesCategory = filterCategory === "all" || item.Categories_category_id === filterCategory;
+
+    // Status Filter
     let matchesStatus = true;
     const qty = parseInt(item.stock_quantity) || 0;
-
     if (filterStatus === "out_of_stock") {
         matchesStatus = qty === 0;
     } else if (filterStatus === "low_stock") {
@@ -143,15 +147,14 @@ const Product = () => {
         matchesStatus = qty >= 10;
     }
 
-    return matchesSearch && matchesStatus;
+    // รวมเงื่อนไขทั้งหมด
+    return matchesSearch && matchesCategory && matchesStatus;
   });
 
   // ================= HANDLERS =================
   const handleChang = (e) => {
     const { name, value } = e.target;
     setForm({ ...form, [name]: value });
-    
-    // เมื่อพิมพ์แก้ ให้ลบ Error ของช่องนั้นทิ้ง
     if (errors[name]) {
         setErrors({ ...errors, [name]: null });
     }
@@ -192,34 +195,17 @@ const Product = () => {
   };
 
   const handleSaveProduct = async () => {
-    // ⭐⭐ FIX: Validation Logic แบบ Inline ⭐⭐
     const newErrors = {};
-    
-    // 1. เช็คชื่อสินค้า
     if (!form.product_name) newErrors.product_name = "กรุณากรอกชื่อสินค้า";
+    if (form.cost_price === "") newErrors.cost_price = "ระบุราคาทุน";
+    else if (parseFloat(form.cost_price) < 0) newErrors.cost_price = "ห้ามติดลบ";
 
-    // 2. เช็คราคาทุน
-    if (form.cost_price === "") {
-        newErrors.cost_price = "ระบุราคาทุน";
-    } else if (parseFloat(form.cost_price) < 0) {
-        newErrors.cost_price = "ห้ามติดลบ";
-    }
+    if (form.selling_price === "") newErrors.selling_price = "ระบุราคาขาย";
+    else if (parseFloat(form.selling_price) < 0) newErrors.selling_price = "ห้ามติดลบ";
 
-    // 3. เช็คราคาขาย
-    if (form.selling_price === "") {
-        newErrors.selling_price = "ระบุราคาขาย";
-    } else if (parseFloat(form.selling_price) < 0) {
-        newErrors.selling_price = "ห้ามติดลบ";
-    }
+    if (form.stock_quantity === "") newErrors.stock_quantity = "ระบุจำนวน";
+    else if (parseInt(form.stock_quantity) < 0) newErrors.stock_quantity = "ห้ามติดลบ";
 
-    // 4. เช็คจำนวนสต็อก (ห้ามติดลบ)
-    if (form.stock_quantity === "") {
-        newErrors.stock_quantity = "ระบุจำนวน";
-    } else if (parseInt(form.stock_quantity) < 0) {
-        newErrors.stock_quantity = "ห้ามติดลบ"; // ❌ เงื่อนไขที่เพิ่มเข้ามา
-    }
-
-    // ถ้ามี error อย่างน้อย 1 ตัว ให้เซ็ต state และหยุดทำงาน
     if (Object.keys(newErrors).length > 0) {
         setErrors(newErrors);
         return; 
@@ -299,18 +285,14 @@ const Product = () => {
   const handleResetFilter = () => {
     setSearchTerm("");
     setFilterStatus("all");
+    setFilterCategory("all"); // ✅ 3. Reset Category ด้วย
   };
 
   // ================= RENDER =================
   return (
     <Container maxWidth="lg" sx={{ mt: 5, mb: 5, fontFamily: 'Sarabun, sans-serif' }}>
       
-      {/* CSS Fix for SweetAlert Z-Index */}
-      <style>{`
-        .swal2-container {
-          z-index: 20000 !important;
-        }
-      `}</style>
+      <style>{` .swal2-container { z-index: 20000 !important; } `}</style>
 
       {/* --- HEADER TOP --- */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
@@ -338,6 +320,8 @@ const Product = () => {
       {/* --- FILTER TOOLBAR --- */}
       <Paper elevation={0} sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'white', border: '1px solid #e0e0e0' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="center">
+            
+            {/* 1. Search Box */}
             <TextField
                 placeholder="ค้นหาชื่อ, Barcode, ตำแหน่ง..."
                 variant="outlined"
@@ -350,6 +334,23 @@ const Product = () => {
                     startAdornment: (<InputAdornment position="start"><SearchIcon color="action" /></InputAdornment>),
                 }}
             />
+
+            {/* ✅ 4. Category Filter (เพิ่มใหม่) */}
+            <FormControl size="small" sx={{ flex: 1, minWidth: 200 }} fullWidth>
+                <InputLabel><CategoryIcon sx={{fontSize: 16, verticalAlign: 'text-top', mr: 0.5}}/>หมวดหมู่</InputLabel>
+                <Select
+                    value={filterCategory}
+                    label="หมวดหมู่"
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                >
+                    <MenuItem value="all">ทั้งหมด</MenuItem>
+                    {categories.map((cat) => (
+                        <MenuItem key={cat.id} value={cat.id}>{cat.category_name}</MenuItem>
+                    ))}
+                </Select>
+            </FormControl>
+
+            {/* 2. Status Filter */}
             <FormControl size="small" sx={{ flex: 1, minWidth: 200 }} fullWidth>
                 <InputLabel><FilterAltIcon sx={{fontSize: 16, verticalAlign: 'text-top', mr: 0.5}}/>สถานะสินค้า</InputLabel>
                 <Select
@@ -358,18 +359,20 @@ const Product = () => {
                     onChange={(e) => setFilterStatus(e.target.value)}
                 >
                     <MenuItem value="all">ทั้งหมด</MenuItem>
-                    <MenuItem value="in_stock">✅ พร้อมขาย (In Stock)</MenuItem>
-                    <MenuItem value="low_stock">⚠️ ใกล้หมด (Low Stock)</MenuItem>
-                    <MenuItem value="out_of_stock">❌ หมดสต็อก (Out of Stock)</MenuItem>
+                    <MenuItem value="in_stock">✅ พร้อมขาย</MenuItem>
+                    <MenuItem value="low_stock">⚠️ ใกล้หมด</MenuItem>
+                    <MenuItem value="out_of_stock">❌ หมดสต็อก</MenuItem>
                 </Select>
             </FormControl>
-            {(searchTerm || filterStatus !== 'all') && (
+
+            {/* 3. Reset Button */}
+            {(searchTerm || filterStatus !== 'all' || filterCategory !== 'all') && (
                 <Button 
                     variant="outlined" 
                     color="inherit" 
                     startIcon={<RestartAltIcon />}
                     onClick={handleResetFilter}
-                    sx={{ borderColor: '#ddd', color: '#666' }}
+                    sx={{ borderColor: '#ddd', color: '#666', whiteSpace: 'nowrap' }}
                 >
                     ล้างตัวกรอง
                 </Button>
@@ -472,7 +475,7 @@ const Product = () => {
         </Table>
       </TableContainer>
 
-      {/* --- MODAL ADD/EDIT PRODUCT --- */}
+      {/* --- MODAL ADD/EDIT PRODUCT (Code ส่วนเดิม ไม่เปลี่ยนแปลง) --- */}
       <Dialog 
         open={open} 
         onClose={() => setOpen(false)} 
@@ -530,7 +533,6 @@ const Product = () => {
                             name="product_name" 
                             fullWidth 
                             required 
-                            // ผูก Error State
                             error={!!errors.product_name}
                             helperText={errors.product_name}
                             value={form.product_name} 
@@ -593,7 +595,7 @@ const Product = () => {
                         label="ราคาทุน" 
                         name="cost_price" 
                         type="number"
-                        inputProps={{ min: 0 }} // ✅ บังคับ UI ห้ามกดลงต่ำกว่า 0
+                        inputProps={{ min: 0 }} 
                         required 
                         fullWidth 
                         sx={{ flex: 1 }}
@@ -606,7 +608,7 @@ const Product = () => {
                         label="ราคาขาย" 
                         name="selling_price" 
                         type="number"
-                        inputProps={{ min: 0 }} // ✅ บังคับ UI ห้ามกดลงต่ำกว่า 0
+                        inputProps={{ min: 0 }} 
                         required 
                         fullWidth 
                         sx={{ flex: 1 }}
@@ -619,7 +621,7 @@ const Product = () => {
                         label="จำนวนสต็อก" 
                         name="stock_quantity" 
                         type="number"
-                        inputProps={{ min: 0 }} // ✅ บังคับ UI ห้ามกดลงต่ำกว่า 0
+                        inputProps={{ min: 0 }} 
                         required 
                         fullWidth 
                         sx={{ flex: 1 }}

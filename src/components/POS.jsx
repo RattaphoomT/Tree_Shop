@@ -1,423 +1,264 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+// --- Config Firebase ---
+import { db } from "../firebase/config"; 
+import { collection, onSnapshot } from "firebase/firestore";
+
 import {
   Box,
   Typography,
   Grid,
   Card,
-  CardContent,
-  CardMedia,
-  Button,
-  Paper,
+  CardActionArea,
+  Chip,
+  Stack,
   TextField,
-  Divider,
+  InputAdornment,
+  Paper,
+  Badge,
   IconButton,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
+  Divider,
+  Button,
+  CircularProgress
 } from "@mui/material";
+
+// --- Icons ---
+import SearchIcon from "@mui/icons-material/Search";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AddIcon from "@mui/icons-material/Add";
 import RemoveIcon from "@mui/icons-material/Remove";
-import DeleteIcon from "@mui/icons-material/Delete";
-import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
-
-// ตัวอย่างข้อมูลสินค้า (mock data)
-const sampleProducts = [
-  {
-    id: 1,
-    name: "ต้นเฟิร์น",
-    price: 120,
-    image:
-      "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=400&q=80",
-  },
-  {
-    id: 2,
-    name: "ต้นกระบองเพชร",
-    price: 80,
-    image:
-      "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=400&q=80",
-  },
-  {
-    id: 4,
-    name: "ต้นลิ้นมังกร",
-    price: 200,
-    image:
-      "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=400&q=80",
-  },
-  {
-    id: 5,
-    name: "ต้นฟิโลเดนดรอน",
-    price: 250,
-    image:
-      "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=400&q=80",
-  },
-];
+import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
+import PaymentIcon from "@mui/icons-material/Payment";
+import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 
 const POS = () => {
+  const [products, setProducts] = useState([]); 
+  // แก้ไข: เก็บเป็น Object { id, name } เพื่อให้เอา ID ไปเทียบกับสินค้าได้
+  const [categories, setCategories] = useState([{ id: "all", name: "ทั้งหมด" }]); 
+  
   const [cart, setCart] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  
+  // แก้ไข: เก็บเป็น ID ของหมวดหมู่ที่เลือก (เริ่มต้นเป็น 'all')
+  const [selectedCategoryId, setSelectedCategoryId] = useState("all");
 
-  // TODO: เชื่อมต่อฐานข้อมูลเพื่อดึงข้อมูลสินค้า
-  // useEffect(() => {
-  //   fetch("/api/products")
-  //     .then(res => res.json())
-  //     .then(data => setProducts(data));
-  // }, []);
+  // ================= CONNECT FIREBASE =================
+  useEffect(() => {
+    // 1. ดึงสินค้า
+    const unsubProducts = onSnapshot(collection(db, "Products"), (snapshot) => {
+      const productData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setProducts(productData);
+      setLoading(false);
+    });
 
+    // 2. ดึงหมวดหมู่ (แก้ไขให้ตรงกับ Field จริง)
+    const unsubCategories = onSnapshot(collection(db, "Categories"), (snapshot) => {
+      const categoryList = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        // *** แก้ไขตรงนี้: จาก .name เป็น .category_name ***
+        name: doc.data().category_name || "ไม่ระบุชื่อ" 
+      }));
+      
+      // เอา object "ทั้งหมด" ไว้ตัวแรก
+      setCategories([{ id: "all", name: "ทั้งหมด" }, ...categoryList]);
+    });
+
+    return () => {
+        unsubProducts();
+        unsubCategories();
+    }; 
+  }, []);
+
+  // ================= LOGIC =================
   const handleAddToCart = (product) => {
+    const stock = parseInt(product.stock_quantity) || 0;
+    if (stock <= 0) return; 
+    
     setCart((prev) => {
       const exist = prev.find((item) => item.id === product.id);
       if (exist) {
+        if (exist.qty >= stock) {
+            alert("สินค้าหมดสต็อก!");
+            return prev;
+        }
         return prev.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
+          item.id === product.id ? { ...item, qty: item.qty + 1 } : item
         );
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { ...product, qty: 1 }];
     });
   };
 
-  const handleRemoveFromCart = (productId) => {
+  const handleUpdateQty = (id, delta) => {
     setCart((prev) =>
-      prev
-        .map((item) =>
-          item.id === productId
-            ? { ...item, quantity: item.quantity - 1 }
-            : item
-        )
-        .filter((item) => item.quantity > 0)
+      prev.map((item) => {
+        if (item.id === id) {
+           const product = products.find(p => p.id === id);
+           const stock = parseInt(product?.stock_quantity) || 0;
+           
+           if (delta > 0 && item.qty >= stock) return item; 
+           return { ...item, qty: Math.max(0, item.qty + delta) };
+        }
+        return item;
+      }).filter(item => item.qty > 0)
     );
   };
 
-  const handleDeleteFromCart = (productId) => {
-    setCart((prev) => prev.filter((item) => item.id !== productId));
+  const handleDeleteItem = (id) => {
+    setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const handleQuantityChange = (productId, value) => {
-    const qty = Math.max(1, parseInt(value) || 1);
-    setCart((prev) =>
-      prev.map((item) =>
-        item.id === productId ? { ...item, quantity: qty } : item
-      )
+  const subtotal = cart.reduce((sum, item) => sum + (Number(item.selling_price) * item.qty), 0);
+  const total = subtotal; 
+
+  // ฟังก์ชันช่วยหาชื่อหมวดหมู่จาก ID (สำหรับแสดงบนการ์ดสินค้า)
+  const getCategoryNameById = (catId) => {
+      if (!catId) return "อื่นๆ";
+      const found = categories.find(c => c.id === catId);
+      return found ? found.name : "อื่นๆ";
+  };
+
+  // Filter Logic (แก้ไขใหม่ให้เทียบ ID)
+  const filteredProducts = products.filter((p) => {
+    // ดึง ID หมวดหมู่จากสินค้า
+    const productCatId = p.Categories_category_id || ""; 
+    
+    // เงื่อนไข: ถ้าเลือก "all" ให้ผ่านหมด, ถ้าเลือกหมวดอื่นต้อง ID ตรงกัน
+    const matchCat = selectedCategoryId === "all" || productCatId === selectedCategoryId;
+    
+    const matchSearch = p.product_name.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
+  // ================= RENDER =================
+  if (loading) {
+    return (
+        <Box display="flex" justifyContent="center" alignItems="center" height="80vh">
+            <CircularProgress sx={{ color: "#1a472a" }} />
+            <Typography sx={{ ml: 2, color: "#1a472a" }}>กำลังโหลดข้อมูล...</Typography>
+        </Box>
     );
-  };
-
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-  // TODO: เชื่อมต่อฐานข้อมูลเพื่อบันทึกการขาย
-  // const handleCheckout = () => {
-  //   fetch("/api/sales", {
-  //     method: "POST",
-  //     body: JSON.stringify(cart),
-  //   });
-  // };
+  }
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        gap: 1.5,
-        px: 1,
-        pb: 0,
-        overflow: "hidden", // ป้องกันการ scroll ทั้งหน้าหลัก
-      }}
-    >
-      {/* สินค้า */}
-      <Box
-        sx={{
-          flex: 1,
-          minWidth: 0,
-          overflowY: "auto", // ให้เลื่อนได้เฉพาะฝั่งสินค้า
-          maxHeight: "80vh",
-          pr: 1,
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        <Typography
-          variant="h5"
-          sx={{
-            mb: 3,
-            fontWeight: 800,
-            letterSpacing: 1,
-            flexShrink: 0,
-            position: "sticky",
-            top: 0,
-            zIndex: 2,
-            background: "aliceblue",
-            py: 2,
-          }}
-        >
-          สินค้าทั้งหมด
-        </Typography>
-        <Grid container spacing={3} display="flex" alignItems="center" >
-          {sampleProducts.map((product) => (
-            <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
-              <Card
-                sx={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  borderRadius: 3,
-                  boxShadow: "0 4px 24px 0 rgba(60,72,88,0.08)",
-                  transition: "transform 0.2s, box-shadow 0.2s",
-                  "&:hover": {
-                    transform: "translateY(-6px) scale(1.03)",
-                    boxShadow: "0 8px 32px 0 rgba(60,72,88,0.16)",
-                  },
-                  background: "#fff",
-                }}
-              >
-                <CardMedia
-                  component="img"
-                  height="150"
-                  image={product.image}
-                  alt={product.name}
-                  sx={{
-                    objectFit: "cover",
-                    borderTopLeftRadius: 12,
-                    borderTopRightRadius: 12,
-                  }}
-                />
-                <CardContent sx={{ flexGrow: 1 }}>
-                  <Typography
-                    variant="subtitle1"
-                    sx={{ fontWeight: 700, fontSize: 18, mb: 0.5 }}
-                    noWrap
-                  >
-                    {product.name}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ fontSize: 15 }}
-                  >
-                    {product.price.toLocaleString()} บาท
-                  </Typography>
-                </CardContent>
-                <Button
-                  variant="contained"
-                  color="success"
-                  sx={{
-                    m: 2,
-                    mt: "auto",
-                    fontWeight: 600,
-                    borderRadius: 2,
-                    boxShadow: "0 2px 8px 0 rgba(76,175,80,0.10)",
-                    fontSize: 16,
-                    py: 1,
-                    transition: "background 0.2s",
-                    "&:hover": { background: "#2e7d32" },
-                  }}
-                  onClick={() => handleAddToCart(product)}
-                >
-                  เพิ่มลงตะกร้า
-                </Button>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-      </Box>
-      {/* ตะกร้าสินค้า */}
-      <Box
-        sx={{
-          width: 340,
-          maxWidth: 340,
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "flex-start",
-          background: "transparent",
-          overflow: "hidden", // ป้องกันการ scroll ฝั่งตะกร้า
-        }}
-      >
-        <Paper
-          elevation={6}
-          sx={{
-            p: 3,
-            borderRadius: 4,
-            background: "#fff",
-            boxShadow: "0 6px 32px 0 rgba(60,72,88,0.10)",
-            width: "100%",
-            height: "73vh",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden", // ป้องกันการ scroll ทั้ง Paper
-          }}
-        >
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 600,
-              mb: 2,
-              display: "flex",
-              alignItems: "center",
-              fontSize: 22,
-              letterSpacing: 1,
-            }}
-          >
-            <ShoppingCartIcon sx={{ mr: 1, color: "#43a047", fontSize: 28 }} />
-            ตะกร้าสินค้า
-          </Typography>
-          <Divider sx={{ mb: 2 }} />
-          <List
-            sx={{
-              flex: 1,
-              overflowY: "auto", // ให้ scroll ได้เฉพาะรายการสินค้าในตะกร้า
-              minHeight: 120,
-              maxHeight: "none",
-            }}
-          >
-            {cart.length === 0 ? (
-              <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
-                ไม่มีสินค้าในตะกร้า
-              </Typography>
-            ) : (
-              cart.map((item) => (
-                <ListItem
-                  key={item.id}
-                  alignItems="flex-start"
-                  sx={{
-                    py: 1.5,
-                    m: 1,
-                    width: "auto",
-                    borderRadius: 2,
-                    mb: 1,  
-                    background: "#fff",
-                    boxShadow: "2px 2px 8px 4px rgba(148, 148, 148, 0.1)",
-                  }}
-                >
-                  <ListItemText
-                    primary={
-                      <>
-                        <Typography sx={{ fontWeight: 700, fontSize: 18 }}>
-                          {item.name}
-                        </Typography>
+    <Box sx={{ height: "calc(100vh - 120px)", display: "flex", gap: 3, overflow: "hidden" }}>
+      
+      {/* LEFT: CATALOG */}
+      <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        
+        {/* Header */}
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+            <Box>
+                <Typography variant="h4" fontWeight="800" color="#1a472a">หน้าขายสินค้า</Typography>
+                <Typography variant="body2" color="text.secondary">{filteredProducts.length} รายการ</Typography>
+            </Box>
+            <TextField
+                placeholder="ค้นหาชื่อสินค้า..."
+                size="small"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon sx={{ color: "#1a472a" }} /></InputAdornment>) }}
+                sx={{ width: 300, bgcolor: "white", borderRadius: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 }, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}
+            />
+        </Box>
 
-                        <Typography sx={{ fontWeight: 500, fontSize: 14, color: 'gray' }}>
-                          ชิ้นละ {item.price} บาท
-                        </Typography>
-                      </>
-                    }
-                    secondary={
-                      <Box
+        {/* --- Categories Chips (แก้ไขใหม่) --- */}
+        <Box sx={{ mb: 2, overflowX: "auto", pb: 1 }}>
+            <Stack direction="row" spacing={1}>
+                {categories.map((cat) => (
+                    <Chip
+                        key={cat.id} // ใช้ ID เป็น key
+                        label={cat.name} // แสดงชื่อหมวดหมู่
+                        onClick={() => setSelectedCategoryId(cat.id)} // เมื่อคลิก เซ็ต ID
                         sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          mt: 1,
-                          flexWrap: "wrap",
-                          gap: 0.5,
-                        }}
-                      >
-                        <IconButton
-                          size="small"
-                          onClick={() => handleRemoveFromCart(item.id)}
-                          sx={{
-                            background: "#f1f8e9",
-                            "&:hover": { background: "#c8e6c9" },
-                          }}
-                        >
-                          <RemoveIcon />
-                        </IconButton>
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) =>
-                            handleQuantityChange(item.id, e.target.value)
-                          }
-                          inputProps={{
-                            min: 1,
-                            style: { width: 40, textAlign: "center" },
-                          }}
-                          sx={{
-                            mx: 1,
-                            "& .MuiInputBase-root": {
-                              borderRadius: 2,
-                              fontWeight: 700,
-                            },
-                          }}
-                        />
-                        <IconButton
-                          size="small"
-                          onClick={() => handleAddToCart(item)}
-                          sx={{
-                            background: "#f1f8e9",
-                            "&:hover": { background: "#c8e6c9" },
-                          }}
-                        >
-                          <AddIcon />
-                        </IconButton>
-
-                        <Typography
-                          sx={{
-                            ml: 2,
                             fontWeight: 600,
-                            color: "#388e3c",
-                          }}
-                        >
-                          รวม {item.price * item.quantity} บาท
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                  <ListItemSecondaryAction>
-                    <IconButton
-                      edge="center"
-                      color="error"
-                      onClick={() => handleDeleteFromCart(item.id)}
-                      sx={{
-                        background: "#fff0f1",
-                        "&:hover": { background: "#ffcdd2" },
-                      }}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </ListItemSecondaryAction>
-                </ListItem>
-              ))
-            )}
-          </List>
-          <Divider sx={{ my: 2 }} />
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              mb: 1,
-              flexWrap: "wrap",
-              gap: 1,
-            }}
-          >
-            <Typography sx={{ fontWeight: 600, fontSize: 17 }}>
-              รวมทั้งหมด
-            </Typography>
-            <Typography
-              sx={{ fontWeight: 800, fontSize: 20, color: "#388e3c" }}
-            >
-              {total.toLocaleString()} บาท
-            </Typography>
-          </Box>
-          <Button
-            variant="contained"
-            color="success"
-            fullWidth
-            disabled={cart.length === 0}
-            sx={{
-              mt: 2,
-              fontWeight: 800,
-              fontSize: 18,
-              py: 1.2,
-              borderRadius: 3,
-              boxShadow: "0 2px 8px 0 rgba(76,175,80,0.10)",
-              letterSpacing: 1,
-              transition: "background 0.2s",
-              "&:hover": { background: "#2e7d32" },
-            }}
-            // onClick={handleCheckout}
-          >
-            ชำระเงิน
-          </Button>
-        </Paper>
+                            // เช็ค active จาก ID
+                            bgcolor: selectedCategoryId === cat.id ? "#1a472a" : "white",
+                            color: selectedCategoryId === cat.id ? "white" : "#555",
+                            border: "1px solid",
+                            borderColor: selectedCategoryId === cat.id ? "#1a472a" : "#e0e0e0",
+                            "&:hover": {
+                                bgcolor: selectedCategoryId === cat.id ? "#143620" : "#f5f5f5"
+                            }
+                        }}
+                    />
+                ))}
+            </Stack>
+        </Box>
+        {/* -------------------------------------- */}
+
+        {/* Product Grid */}
+        <Box sx={{ flex: 1, overflowY: "auto", pr: 1, pb: 2 }}>
+            <Grid container spacing={2}>
+                {filteredProducts.map((product) => {
+                    const stock = parseInt(product.stock_quantity) || 0;
+                    const isOutOfStock = stock <= 0;
+                    return (
+                        <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
+                            <Card sx={{ height: "100%", borderRadius: 3, opacity: isOutOfStock ? 0.6 : 1, bgcolor: "white", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", "&:hover": { transform: !isOutOfStock && "translateY(-4px)", boxShadow: "0 8px 16px rgba(26, 71, 42, 0.1)" } }}>
+                                <CardActionArea onClick={() => handleAddToCart(product)} disabled={isOutOfStock} sx={{ height: "100%", p: 2.5, display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "space-between" }}>
+                                    <Box width="100%" mb={2}>
+                                        <Typography variant="h6" fontWeight="bold" sx={{ mb: 1, lineHeight: 1.3, fontSize: "1.1rem", color: "#333" }}>
+                                            {product.product_name}
+                                        </Typography>
+                                        {/* แก้ไข: ใช้ฟังก์ชันแปลง ID เป็นชื่อ */}
+                                        <Typography variant="caption" sx={{ color: "#1a472a", fontWeight: "bold", bgcolor: "#e8f5e9", px: 1, py: 0.5, borderRadius: 1 }}>
+                                            {getCategoryNameById(product.Categories_category_id)}
+                                        </Typography>
+                                    </Box>
+                                    <Box width="100%" display="flex" justifyContent="space-between" alignItems="flex-end">
+                                        <Box>
+                                            <Typography variant="body2" color="text.secondary" fontSize={12}>ราคา</Typography>
+                                            <Typography variant="h6" color="#1a472a" fontWeight="800">฿{Number(product.selling_price).toLocaleString()}</Typography>
+                                        </Box>
+                                        <Chip sx={{ mb: 0.5 , ml: 1 }} label={isOutOfStock ? "หมด" : `คลัง: ${stock}`} size="small" color={isOutOfStock ? "error" : "default"} variant="outlined" icon={!isOutOfStock ? <Inventory2OutlinedIcon sx={{ fontSize: "14px !important" }} /> : undefined} />
+                                    </Box>
+                                </CardActionArea>
+                            </Card>
+                        </Grid>
+                    );
+                })}
+            </Grid>
+        </Box>
       </Box>
+
+      {/* RIGHT: CART (เหมือนเดิม) */}
+      <Paper elevation={0} sx={{ width: 380, flexShrink: 0, borderRadius: 4, display: "flex", flexDirection: "column", bgcolor: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.08)", border: "1px solid #f0f0f0", overflow: "hidden" }}>
+        <Box sx={{ p: 2, bgcolor: "#f9fafb", borderBottom: "1px solid #eee" }}>
+            <Box display="flex" alignItems="center" gap={1}>
+                <Badge badgeContent={cart.length} color="error"><ShoppingCartOutlinedIcon sx={{ color: "#1a472a" }} /></Badge>
+                <Typography variant="h6" fontWeight="bold" color="#1a472a">ตะกร้าสินค้า</Typography>
+            </Box>
+        </Box>
+        <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+            {cart.map((item) => (
+                <Box key={item.id} sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 2, p: 2, borderRadius: 2, bgcolor: "#fff", border: "1px solid #f5f5f5", position: "relative" }}>
+                     <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+                        <Box pr={4}><Typography variant="body1" fontWeight="bold">{item.product_name}</Typography><Typography variant="caption" color="text.secondary">@{Number(item.selling_price).toLocaleString()}</Typography></Box>
+                        <IconButton size="small" onClick={() => handleDeleteItem(item.id)} sx={{ position: "absolute", top: 8, right: 8, color: "#ef5350", bgcolor: "#ffebee" }}><DeleteOutlineIcon fontSize="small" /></IconButton>
+                     </Box>
+                     <Divider sx={{ my: 0.5, borderStyle: 'dashed' }} />
+                     <Box display="flex" justifyContent="space-between" alignItems="center">
+                         <Box display="flex" alignItems="center" bgcolor="#f5f5f5" borderRadius={1}>
+                            <IconButton size="small" onClick={() => handleUpdateQty(item.id, -1)}><RemoveIcon fontSize="small" /></IconButton>
+                            <Typography variant="body2" fontWeight="bold" sx={{ mx: 1, minWidth: 20, textAlign: "center" }}>{item.qty}</Typography>
+                            <IconButton size="small" onClick={() => handleUpdateQty(item.id, 1)} sx={{ color: "#4caf50" }}><AddIcon fontSize="small" /></IconButton>
+                        </Box>
+                        <Typography fontWeight="bold" color="#1a472a">฿{(Number(item.selling_price) * item.qty).toLocaleString()}</Typography>
+                     </Box>
+                </Box>
+            ))}
+        </Box>
+        <Box sx={{ p: 3, bgcolor: "#fff", borderTop: "1px dashed #e0e0e0" }}>
+            <Box display="flex" justifyContent="space-between" mb={1}><Typography color="text.secondary">รวมเป็นเงิน</Typography><Typography fontWeight="bold">฿{total.toLocaleString()}</Typography></Box>
+            <Divider sx={{ mb: 2, mt: 1 }} />
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}><Typography variant="h6" fontWeight="bold">ยอดสุทธิ</Typography><Typography variant="h4" fontWeight="800" color="#1a472a">฿{total.toLocaleString()}</Typography></Box>
+            <Button variant="contained" size="large" fullWidth startIcon={<PaymentIcon />} disabled={cart.length === 0} sx={{ bgcolor: "#1a472a", borderRadius: 3, height: 50, fontSize: 18, fontWeight: "bold" }}>ชำระเงิน</Button>
+        </Box>
+      </Paper>
     </Box>
   );
 };
