@@ -403,7 +403,7 @@ const POS = () => {
               const stock = parseInt(product.stock_quantity) || 0;
               const isOutOfStock = stock <= 0;
               return (
-                <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
+                <Grid item size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={product.id}>
                   <Card sx={{ height: "100%", borderRadius: 3, opacity: isOutOfStock ? 0.6 : 1, bgcolor: "white", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", "&:hover": { transform: !isOutOfStock && "translateY(-4px)", boxShadow: "0 8px 16px rgba(26, 71, 42, 0.1)" } }}>
                     <CardActionArea onClick={() => handleAddToCart(product)} sx={{ height: "100%", p: 2.5, display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "space-between" }}>
                       <Box width="100%" mb={2}>
