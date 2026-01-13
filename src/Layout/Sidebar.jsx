@@ -32,7 +32,7 @@
       { to: "/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
       { to: "/pos", label: "POS", icon: <PointOfSaleIcon /> },
       { to: "/product", label: "สินค้า", icon: <Inventory2Icon /> },
-      { to: "/orders", label: "ประวัติการขาย", icon: <ShoppingCartIcon /> },
+      { to: "/history", label: "ประวัติการขาย", icon: <ShoppingCartIcon /> },
       { to: "/customers", label: "ลูกค้า", icon: <PeopleIcon /> },
     ];
 
