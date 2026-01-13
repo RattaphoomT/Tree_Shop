@@ -15,7 +15,8 @@ import {
   TableContainer, TableHead, TableRow, Chip, CircularProgress,
   Stack, Card, CardHeader, useTheme, alpha, Divider,
   List, ListItem, ListItemAvatar, ListItemText, Button, TextField,
-  TablePagination, InputAdornment, Dialog, DialogContent, DialogActions
+  TablePagination, InputAdornment, Dialog, DialogContent, DialogActions,
+  ToggleButton, ToggleButtonGroup
 } from "@mui/material";
 
 // --- MUI X Date Pickers ---
@@ -24,6 +25,11 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import 'dayjs/locale/th'; 
+import isBetween from 'dayjs/plugin/isBetween';
+
+// Config Dayjs
+dayjs.extend(isBetween);
+dayjs.locale('th');
 
 // --- Print Library ---
 import { useReactToPrint } from "react-to-print";
@@ -34,16 +40,17 @@ import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward"; // ✅ เพิ่มไอคอนลูกศรลง
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import DonutSmallIcon from '@mui/icons-material/DonutSmall';
 import SearchIcon from '@mui/icons-material/Search';
+import EventIcon from '@mui/icons-material/Event';
+import ArrowRightAltIcon from '@mui/icons-material/ArrowRightAlt';
 import PrintIcon from '@mui/icons-material/Print';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-
-// ✅ Import Icons สำหรับ Status เหมือนหน้า History
+import ShowChartIcon from '@mui/icons-material/ShowChart';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
@@ -51,7 +58,7 @@ import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 // --- Colors for Pie Chart ---
 const COLORS = ['#00AB55', '#2D99FF', '#FFC107', '#FF5630', '#9E58FF', '#00B8D9', '#FFAB00', '#36B37E'];
 
-// ================= SUB-COMPONENT: KPI CARD (UPDATED) =================
+// ================= SUB-COMPONENT: KPI CARD =================
 const KpiCard = ({ title, value, icon, color, trend, trendColor, trendIcon }) => (
   <Card
     elevation={0}
@@ -75,7 +82,6 @@ const KpiCard = ({ title, value, icon, color, trend, trendColor, trendIcon }) =>
           <Avatar variant="rounded" sx={{ bgcolor: alpha(color, 0.1), color: color, width: 50, height: 50, borderRadius: 2, mb: 2 }}>
               {icon}
           </Avatar>
-          {/* ✅ แสดง Trend เปอร์เซ็นต์ พร้อมสีที่กำหนดเอง */}
           {trend && (
               <Chip 
                 label={trend} 
@@ -109,7 +115,10 @@ const Dashboard = () => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]); 
   
-  // --- Date Range State ---
+  // --- KPI Filter State ---
+  const [kpiFilter, setKpiFilter] = useState("today"); 
+
+  // --- Date Range State (For Chart & Table) ---
   const [startDate, setStartDate] = useState(dayjs().subtract(7, 'day'));
   const [endDate, setEndDate] = useState(dayjs());
 
@@ -124,11 +133,11 @@ const Dashboard = () => {
   const receiptRef = useRef(null);
 
   // Calculated States
-  // ✅ เพิ่ม salesGrowth และ todaySales ใน Summary
   const [summary, setSummary] = useState({ 
-      todaySales: 0, 
+      periodSales: 0, 
+      periodProfit: 0, 
       salesGrowth: 0, 
-      totalOrders: 0, 
+      periodOrders: 0, 
       totalProducts: 0, 
       lowStockCount: 0 
   });
@@ -153,7 +162,7 @@ const Dashboard = () => {
       setCategories(categoriesList);
 
       const ordersRef = collection(db, "Orders");
-      const qOrders = query(ordersRef, orderBy("transaction_date", "desc"), limit(1000)); // เพิ่ม limit เพื่อให้ครอบคลุมข้อมูล
+      const qOrders = query(ordersRef, orderBy("transaction_date", "desc"), limit(2000));
       const ordersSnapshot = await getDocs(qOrders);
       const ordersList = ordersSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setRawOrders(ordersList);
@@ -169,83 +178,123 @@ const Dashboard = () => {
     fetchData();
   }, []);
 
+  // Update Calculation when filter changes
   useEffect(() => {
     if (rawOrders.length > 0 || products.length > 0) {
-        calculateDashboard(rawOrders, products, categories, startDate, endDate);
+        calculateDashboard(rawOrders, products, categories, startDate, endDate, kpiFilter);
     }
-  }, [startDate, endDate, rawOrders, products, categories]);
+  }, [startDate, endDate, rawOrders, products, categories, kpiFilter]);
 
   useEffect(() => {
     setPage(0);
   }, [searchTerm]);
 
   // --- Logic Calculation ---
-  const calculateDashboard = (orders, allProducts, allCategories, startDayjs, endDayjs) => {
-    // 1. Setup Dates for Range Filter (สำหรับ Chart & Table)
-    const startObj = startDayjs ? startDayjs.toDate() : new Date();
-    startObj.setHours(0,0,0,0);
-    const endObj = endDayjs ? endDayjs.toDate() : new Date();
-    endObj.setHours(23,59,59,999);
+  const calculateDashboard = (orders, allProducts, allCategories, startDayjs, endDayjs, filterType) => {
+    
+    // --- 1. KPI Calculation Logic (Dynamic Dates) ---
+    let currentStart, currentEnd, prevStart, prevEnd;
+    const now = dayjs();
 
-    // 2. Setup Dates for TODAY vs YESTERDAY (สำหรับ KPI ยอดขาย)
-    const todayStart = new Date();
-    todayStart.setHours(0,0,0,0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23,59,59,999);
+    switch (filterType) {
+        case 'today':
+            currentStart = now.startOf('day');
+            currentEnd = now.endOf('day');
+            prevStart = now.subtract(1, 'day').startOf('day');
+            prevEnd = now.subtract(1, 'day').endOf('day');
+            break;
+        case 'this_week':
+            currentStart = now.startOf('week');
+            currentEnd = now.endOf('week');
+            prevStart = now.subtract(1, 'week').startOf('week');
+            prevEnd = now.subtract(1, 'week').endOf('week');
+            break;
+        case 'last_week':
+            currentStart = now.subtract(1, 'week').startOf('week');
+            currentEnd = now.subtract(1, 'week').endOf('week');
+            prevStart = now.subtract(2, 'week').startOf('week');
+            prevEnd = now.subtract(2, 'week').endOf('week');
+            break;
+        case 'this_month':
+            currentStart = now.startOf('month');
+            currentEnd = now.endOf('month');
+            prevStart = now.subtract(1, 'month').startOf('month');
+            prevEnd = now.subtract(1, 'month').endOf('month');
+            break;
+        case 'last_month':
+            currentStart = now.subtract(1, 'month').startOf('month');
+            currentEnd = now.subtract(1, 'month').endOf('month');
+            prevStart = now.subtract(2, 'month').startOf('month');
+            prevEnd = now.subtract(2, 'month').endOf('month');
+            break;
+        default: // today
+            currentStart = now.startOf('day');
+            currentEnd = now.endOf('day');
+            prevStart = now.subtract(1, 'day').startOf('day');
+            prevEnd = now.subtract(1, 'day').endOf('day');
+    }
 
-    const yesterdayStart = new Date(todayStart);
-    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    const yesterdayEnd = new Date(todayEnd);
-    yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
+    let periodSales = 0;
+    let periodProfit = 0;
+    let periodOrders = 0;
+    let prevPeriodSales = 0;
 
-    let todaySales = 0;
-    let yesterdaySales = 0;
-
-    // --- Loop คำนวณยอดขายวันนี้และเมื่อวาน ---
     orders.forEach(order => {
         if (order.status === 'completed' && order.transaction_date) {
-            const orderDate = order.transaction_date.seconds 
-                ? new Date(order.transaction_date.seconds * 1000)
-                : new Date(order.transaction_date);
-            
+            const orderTime = dayjs(order.transaction_date.seconds * 1000);
             const total = Number(order.grand_total) || 0;
 
-            // เช็คว่าเป็น "วันนี้" หรือไม่
-            if (orderDate >= todayStart && orderDate <= todayEnd) {
-                todaySales += total;
+            // คำนวณต้นทุน
+            let orderCost = 0;
+            if (order.items && Array.isArray(order.items)) {
+                order.items.forEach(item => {
+                    const pid = item.id || item.product_id;
+                    const productInfo = allProducts.find(p => p.id === pid);
+                    const cost = Number(productInfo?.cost_price) || 0; 
+                    const qty = Number(item.qty || item.quantity) || 0;
+                    orderCost += (cost * qty);
+                });
             }
-            // เช็คว่าเป็น "เมื่อวาน" หรือไม่
-            if (orderDate >= yesterdayStart && orderDate <= yesterdayEnd) {
-                yesterdaySales += total;
+
+            // Current Period Sum
+            if (orderTime.isBetween(currentStart, currentEnd, null, '[]')) {
+                periodSales += total;
+                periodProfit += (total - orderCost);
+                periodOrders += 1;
+            }
+
+            // Previous Period Sum (For Growth Rate)
+            if (orderTime.isBetween(prevStart, prevEnd, null, '[]')) {
+                prevPeriodSales += total;
             }
         }
     });
 
-    // --- คำนวณ % การเติบโต (Growth Rate) ---
+    // Growth Rate
     let growthPercent = 0;
-    if (yesterdaySales > 0) {
-        growthPercent = ((todaySales - yesterdaySales) / yesterdaySales) * 100;
-    } else if (todaySales > 0) {
-        growthPercent = 100; // ถ้าเมื่อวานขายไม่ได้เลย แต่วันนี้ขายได้ ถือว่าโต 100%
+    if (prevPeriodSales > 0) {
+        growthPercent = ((periodSales - prevPeriodSales) / prevPeriodSales) * 100;
+    } else if (periodSales > 0) {
+        growthPercent = 100;
     } else {
         growthPercent = 0;
     }
 
-    // 3. Filter Orders ตามช่วงเวลา (Range) สำหรับกราฟและตาราง
-    const filteredOrders = orders.filter(order => {
+    // --- 2. Chart & Table Filter (Based on DatePicker) ---
+    const chartStart = startDayjs ? startDayjs.startOf('day') : now.startOf('day');
+    const chartEnd = endDayjs ? endDayjs.endOf('day') : now.endOf('day');
+
+    const filteredOrdersForChart = orders.filter(order => {
         if (!order.transaction_date) return false;
-        const orderDate = order.transaction_date.seconds 
-            ? new Date(order.transaction_date.seconds * 1000)
-            : new Date(order.transaction_date);
-        return orderDate >= startObj && orderDate <= endObj;
+        const orderTime = dayjs(order.transaction_date.seconds * 1000);
+        return orderTime.isBetween(chartStart, chartEnd, null, '[]');
     });
 
-    // Low Stock Calculation
+    // --- 3. Other Data Calculations ---
     const lowStock = allProducts.filter((p) => (parseInt(p.stock_quantity) || 0) < 10);
 
-    // Products Sales Count Logic
     const productSalesCount = {};
-    filteredOrders.forEach(order => {
+    filteredOrdersForChart.forEach(order => {
         if (order.status === 'completed') {
             if (order.items && Array.isArray(order.items)) {
                 order.items.forEach(item => {
@@ -272,7 +321,7 @@ const Dashboard = () => {
         id: p.id, name: p.product_name, image: p.image_url, sold: 0, stock: p.stock_quantity
     }));
 
-    // Category Chart Logic
+    // Category
     const categoryNameMap = {};
     allCategories.forEach(cat => categoryNameMap[cat.id] = cat.category_name);
     const catCountMap = {};
@@ -287,52 +336,55 @@ const Dashboard = () => {
         name: key, value: catCountMap[key], percent: ((catCountMap[key] / totalProds) * 100).toFixed(1)
     })).sort((a, b) => b.value - a.value);
     
-    const graphData = processSalesData(filteredOrders, startObj, endObj);
+    // Graph
+    const graphData = processSalesData(filteredOrdersForChart, chartStart, chartEnd);
 
-    // ✅ Set Summary ด้วยค่า Today Sales & Growth
+    // ✅ Set Summary
     setSummary({ 
-        todaySales: todaySales, 
+        periodSales, 
+        periodProfit,
         salesGrowth: growthPercent, 
-        totalOrders: filteredOrders.length, 
+        periodOrders: periodOrders,
         totalProducts: allProducts.length, 
         lowStockCount: lowStock.length 
     });
 
-    setRecentOrders(filteredOrders); 
-    setFilteredList(filteredOrders); 
+    setRecentOrders(filteredOrdersForChart); 
+    setFilteredList(filteredOrdersForChart); 
     setLowStockItems(lowStock.slice(0, 10));
     setTopProducts(displayTopProducts);
     setSalesData(graphData);
     setCategoryData(chartData);
   };
 
-  const processSalesData = (orders, startObj, endObj) => {
+  const processSalesData = (orders, startDayjs, endDayjs) => {
     const salesMap = {};
-    const current = new Date(startObj);
-    while (current <= endObj) {
-        const dateStr = current.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
-        salesMap[dateStr] = 0;
-        current.setDate(current.getDate() + 1);
+    let current = startDayjs.clone();
+    while (current.isBefore(endDayjs) || current.isSame(endDayjs, 'day')) {
+        const dateStr = current.format("D MMM");
+        salesMap[dateStr] = { sales: 0, orders: 0 };
+        current = current.add(1, 'day');
     }
     orders.forEach((order) => {
       if (order.transaction_date && order.status === 'completed') {
-        const date = order.transaction_date.seconds ? new Date(order.transaction_date.seconds * 1000) : new Date(order.transaction_date);
-        const dateStr = date.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
-        if (salesMap[dateStr] !== undefined) salesMap[dateStr] += (Number(order.grand_total) || 0);
+        const date = dayjs(order.transaction_date.seconds * 1000);
+        const dateStr = date.format("D MMM");
+        if (salesMap[dateStr] !== undefined) {
+            salesMap[dateStr].sales += (Number(order.grand_total) || 0);
+            salesMap[dateStr].orders += 1;
+        }
       }
     });
-    return Object.keys(salesMap).map((key) => ({ name: key, ยอดขาย: salesMap[key] }));
+    return Object.keys(salesMap).map((key) => ({ 
+        name: key, 
+        ยอดขาย: salesMap[key].sales,
+        จำนวนออเดอร์: salesMap[key].orders
+    }));
   };
 
-  // --- Table Filtering & Pagination ---
-  const handlePageChange = (event, newPage) => {
-    setPage(newPage);
-  };
-
-  const handleRowsPerPageChange = (event) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
+  // --- Helpers ---
+  const handlePageChange = (event, newPage) => setPage(newPage);
+  const handleRowsPerPageChange = (event) => { setRowsPerPage(parseInt(event.target.value, 10)); setPage(0); };
 
   const filteredTableData = recentOrders.filter((order) => {
     const term = searchTerm.toLowerCase();
@@ -344,21 +396,9 @@ const Dashboard = () => {
 
   const paginatedData = filteredTableData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
-  // --- Receipt Logic ---
-  const handleOpenReceipt = (order) => {
-    setSelectedOrder(order);
-    setOpenReceipt(true);
-  };
-
-  const handleCloseReceipt = () => {
-    setOpenReceipt(false);
-    setSelectedOrder(null);
-  };
-
-  const handlePrintReceipt = useReactToPrint({
-    content: () => receiptRef.current,
-    documentTitle: `Receipt_${selectedOrder?.order_number || 'Print'}`,
-  });
+  const handleOpenReceipt = (order) => { setSelectedOrder(order); setOpenReceipt(true); };
+  const handleCloseReceipt = () => { setOpenReceipt(false); setSelectedOrder(null); };
+  const handlePrintReceipt = useReactToPrint({ content: () => receiptRef.current, documentTitle: `Receipt_${selectedOrder?.order_number || 'Print'}` });
 
   const handleExportCSV = () => {
     if (filteredList.length === 0) { alert("ไม่มีข้อมูลสำหรับส่งออก"); return; }
@@ -379,63 +419,32 @@ const Dashboard = () => {
     const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
     const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
     if (percent <= 0) return null;
-    return (
-      <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={11} fontWeight="bold">
-        {`${payload.percent}%`}
-      </text>
-    );
+    return <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={11} fontWeight="bold">{`${payload.percent}%`}</text>;
   };
 
-  // ✅ Helper: Status Render
   const renderStatus = (status) => {
     switch (status) {
-      case 'completed': 
-        return (
-          <Chip 
-            icon={<CheckCircleOutlineIcon sx={{ fontSize: '18px !important', color: theme.palette.success.dark }} />} 
-            label="สำเร็จ" 
-            size="small" 
-            sx={{ 
-              bgcolor: alpha(theme.palette.success.main, 0.16), 
-              color: theme.palette.success.dark, 
-              fontWeight: 'bold',
-              borderRadius: '8px',
-              border: '1px solid transparent'
-            }} 
-          />
-        );
-      case 'pending': 
-        return (
-          <Chip 
-            icon={<HourglassEmptyIcon sx={{ fontSize: '18px !important', color: theme.palette.warning.dark }} />} 
-            label="รอชำระ" 
-            size="small" 
-            sx={{ 
-              bgcolor: alpha(theme.palette.warning.main, 0.16), 
-              color: theme.palette.warning.dark, 
-              fontWeight: 'bold',
-              borderRadius: '8px',
-              border: '1px solid transparent'
-            }} 
-          />
-        );
-      case 'cancelled': 
-        return (
-          <Chip 
-            icon={<CancelOutlinedIcon sx={{ fontSize: '18px !important', color: theme.palette.error.dark }} />} 
-            label="ยกเลิก" 
-            size="small" 
-            sx={{ 
-              bgcolor: alpha(theme.palette.error.main, 0.16), 
-              color: theme.palette.error.dark, 
-              fontWeight: 'bold',
-              borderRadius: '8px',
-              border: '1px solid transparent'
-            }} 
-          />
-        );
-      default: 
-        return <Chip label={status} size="small" />;
+      case 'completed': return <Chip icon={<CheckCircleOutlineIcon sx={{ fontSize: '18px !important', color: theme.palette.success.dark }} />} label="สำเร็จ" size="small" sx={{ bgcolor: alpha(theme.palette.success.main, 0.16), color: theme.palette.success.dark, fontWeight: 'bold', borderRadius: '8px', border: '1px solid transparent' }} />;
+      case 'pending': return <Chip icon={<HourglassEmptyIcon sx={{ fontSize: '18px !important', color: theme.palette.warning.dark }} />} label="รอชำระ" size="small" sx={{ bgcolor: alpha(theme.palette.warning.main, 0.16), color: theme.palette.warning.dark, fontWeight: 'bold', borderRadius: '8px', border: '1px solid transparent' }} />;
+      case 'cancelled': return <Chip icon={<CancelOutlinedIcon sx={{ fontSize: '18px !important', color: theme.palette.error.dark }} />} label="ยกเลิก" size="small" sx={{ bgcolor: alpha(theme.palette.error.main, 0.16), color: theme.palette.error.dark, fontWeight: 'bold', borderRadius: '8px', border: '1px solid transparent' }} />;
+      default: return <Chip label={status} size="small" />;
+    }
+  };
+
+  const getPeriodLabel = (filter) => {
+      switch(filter) {
+          case 'today': return '(วันนี้)';
+          case 'this_week': return '(สัปดาห์นี้)';
+          case 'last_week': return '(สัปดาห์ก่อน)';
+          case 'this_month': return '(เดือนนี้)';
+          case 'last_month': return '(เดือนก่อน)';
+          default: return '';
+      }
+  }
+
+  const handleKpiFilterChange = (event, newAlignment) => {
+    if (newAlignment !== null) {
+      setKpiFilter(newAlignment);
     }
   };
 
@@ -443,10 +452,9 @@ const Dashboard = () => {
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="th">
-        <Box sx={{  minHeight: '100vh', m: -3, pb: 6 }}>
+        <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', m: -3, pb: 6 }}>
         <Container maxWidth={false} sx={{ pt: 4, px: { xs: 2, md: 4 } }}> 
             
-            {/* --- 1. Header --- */}
             <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems="center" mb={4} spacing={2}>
                 <Box>
                     <Typography variant="h4" fontWeight="800" sx={{ color: '#1a1a1a', letterSpacing: '-0.5px' }}>รายงานภาพรวมของระบบ</Typography>
@@ -458,41 +466,86 @@ const Dashboard = () => {
                 </Stack>
             </Stack>
 
-            {/* --- 2. KPI Cards --- */}
+            {/* --- Filter Button Group (Left Aligned) --- */}
+            <Box mb={3} display="flex" justifyContent="flex-start">
+                <ToggleButtonGroup
+                    value={kpiFilter}
+                    exclusive
+                    onChange={handleKpiFilterChange}
+                    aria-label="kpi filter"
+                    size="small"
+                    sx={{ 
+                        bgcolor: 'white', 
+                        borderRadius: 2, 
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                        '& .MuiToggleButton-root': { 
+                            border: 'none', 
+                            borderRadius: 2, 
+                            mx: 0.5, 
+                            py: 0.8,
+                            px: 2,
+                            fontWeight: 600,
+                            color: 'text.secondary',
+                            '&.Mui-selected': { 
+                                bgcolor: alpha(theme.palette.primary.main, 0.1), 
+                                color: theme.palette.primary.main,
+                                '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.2) }
+                            },
+                            '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.05) }
+                        }
+                    }}
+                >
+                    <ToggleButton value="today">วันนี้</ToggleButton>
+                    <ToggleButton value="this_week">สัปดาห์นี้</ToggleButton>
+                    <ToggleButton value="last_week">สัปดาห์ก่อน</ToggleButton>
+                    <ToggleButton value="this_month">เดือนนี้</ToggleButton>
+                    <ToggleButton value="last_month">เดือนก่อน</ToggleButton>
+                </ToggleButtonGroup>
+            </Box>
+
             <Grid container spacing={3} mb={4}>
-                {/* ✅ CARD 1: ยอดขายวันนี้ + Growth Rate 
-                   คำนวณ: (วันนี้ - เมื่อวาน) / เมื่อวาน * 100
-                   ถ้าค่าเป็นลบ ให้เป็นสีแดง + ลูกศรลง
-                */}
-                <Grid item size={{ xs: 12, sm: 6, lg: 3 }}>
+                {/* 1. ยอดขาย (Dynamic) */}
+                <Grid item size={{ xs: 12, sm: 6, lg: 3 }} >
                     <KpiCard 
-                        title="ยอดขายวันนี้" 
-                        value={`฿${summary.todaySales.toLocaleString()}`} 
+                        title={`ยอดขาย ${getPeriodLabel(kpiFilter)}`} 
+                        value={`฿${summary.periodSales.toLocaleString()}`} 
                         icon={<MonetizationOnIcon sx={{ fontSize: 28 }} />} 
                         color={theme.palette.success.main} 
-                        // ถ้า growth >= 0 ใช้สีเขียว, น้อยกว่า 0 ใช้สีแดง
                         trend={`${summary.salesGrowth > 0 ? '+' : ''}${summary.salesGrowth.toFixed(1)}%`}
                         trendColor={summary.salesGrowth >= 0 ? theme.palette.success.main : theme.palette.error.main}
                         trendIcon={summary.salesGrowth >= 0 ? <ArrowUpwardIcon sx={{ width: 14, color: theme.palette.success.main }} /> : <ArrowDownwardIcon sx={{ width: 14, color: theme.palette.error.main }} />}
                     />
                 </Grid>
 
-                <Grid item size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="จำนวนออเดอร์" value={summary.totalOrders} icon={<ReceiptLongIcon sx={{ fontSize: 28 }} />} color={theme.palette.info.main} /></Grid>
-                <Grid item size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="สินค้าในคลัง" value={summary.totalProducts} icon={<Inventory2Icon sx={{ fontSize: 28 }} />} color={theme.palette.primary.main} /></Grid>
-                <Grid item size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="สินค้าใกล้หมด" value={summary.lowStockCount} icon={<WarningAmberIcon sx={{ fontSize: 28 }} />} color={theme.palette.warning.main} trend={summary.lowStockCount > 0 ? "Alert" : null} /></Grid>
+                {/* 2. กำไร (Dynamic) */}
+                <Grid item size={{ xs: 12, sm: 6, lg: 3 }} >
+                    <KpiCard 
+                        title={`กำไร ${getPeriodLabel(kpiFilter)}`} 
+                        value={`฿${summary.periodProfit.toLocaleString()}`} 
+                        icon={<ShowChartIcon sx={{ fontSize: 28 }} />} 
+                        color={theme.palette.secondary.main} 
+                    />
+                </Grid>
+
+                {/* 3. จำนวนออเดอร์ (Dynamic) */}
+                <Grid item size={{ xs: 12, sm: 6, lg: 3 }} >
+                    <KpiCard 
+                        title={`จำนวนออเดอร์ ${getPeriodLabel(kpiFilter)}`} 
+                        value={summary.periodOrders} 
+                        icon={<ReceiptLongIcon sx={{ fontSize: 28 }} />} 
+                        color={theme.palette.info.main} 
+                    />
+                </Grid>
+
+                <Grid item size={{ xs: 12, sm: 6, lg: 3 }} ><KpiCard title="สินค้าใกล้หมด" value={summary.lowStockCount} icon={<WarningAmberIcon sx={{ fontSize: 28 }} />} color={theme.palette.warning.main} trend={summary.lowStockCount > 0 ? "Alert" : null} /></Grid>
             </Grid>
 
-            {/* --- 3. Grid Row 2: Charts --- */}
+            {/* --- Chart Section --- */}
             <Grid container spacing={3} mb={4}>
-                
-                {/* Sales Chart */}
                 <Grid item size={{ xs: 12, lg: 8 }}>
                     <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid #e0e0e0', height: 450, display: 'flex', flexDirection: 'column' }}>
                         <Box sx={{ p: 3, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, gap: 2 }}>
-                            <Box>
-                                <Typography variant="h6" fontWeight="800">แนวโน้มยอดขาย</Typography>
-                                <Typography variant="caption" color="text.secondary">กราฟแสดงยอดขายตามช่วงเวลา</Typography>
-                            </Box>
+                            <Box><Typography variant="h6" fontWeight="800">แนวโน้มยอดขาย</Typography><Typography variant="caption" color="text.secondary">กราฟแสดงยอดขายตามช่วงเวลาที่เลือก</Typography></Box>
                             <Stack direction="row" spacing={2} alignItems="center">
                                 <DatePicker label="ตั้งแต่วันที่" value={startDate} onChange={setStartDate} slotProps={{ textField: { size: 'small', sx: { bgcolor: 'white', borderRadius: 1, '& .MuiOutlinedInput-root': { borderRadius: '8px' } } } }} />
                                 <Typography color="text.secondary">-</Typography>
@@ -502,28 +555,33 @@ const Dashboard = () => {
                         <Box sx={{ flex: 1, px: 2, pb: 2, minWidth: 0 }}>
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={salesData}>
-                                    <defs><linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00AB55" stopOpacity={0.2}/><stop offset="95%" stopColor="#00AB55" stopOpacity={0}/></linearGradient></defs>
+                                    <defs>
+                                        <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00AB55" stopOpacity={0.2}/><stop offset="95%" stopColor="#00AB55" stopOpacity={0}/></linearGradient>
+                                        <linearGradient id="colorOrders" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2D99FF" stopOpacity={0.2}/><stop offset="95%" stopColor="#2D99FF" stopOpacity={0}/></linearGradient>
+                                    </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F2F4F7" />
                                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#637381', fontSize: 12 }} dy={10} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#637381', fontSize: 12 }} width={40} />
-                                    <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 8px 16px rgba(0,0,0,0.1)' }} formatter={(value) => `฿${Number(value).toLocaleString()}`} />
-                                    <Area type="monotone" dataKey="ยอดขาย" stroke="#00AB55" strokeWidth={3} fill="url(#colorSales)" />
+                                    <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fill: '#637381', fontSize: 12 }} width={40} />
+                                    <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#2D99FF', fontSize: 12 }} width={40} />
+                                    <Tooltip 
+                                        contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 8px 16px rgba(0,0,0,0.1)' }} 
+                                        formatter={(value, name) => {
+                                            if(name === 'ยอดขาย') return `฿${Number(value).toLocaleString()}`;
+                                            if(name === 'จำนวนออเดอร์') return `${value} บิล`;
+                                            return value;
+                                        }}
+                                    />
+                                    <Legend verticalAlign="top" height={36}/>
+                                    <Area yAxisId="left" type="monotone" dataKey="ยอดขาย" stroke="#00AB55" strokeWidth={3} fill="url(#colorSales)" />
+                                    <Area yAxisId="right" type="monotone" dataKey="จำนวนออเดอร์" stroke="#2D99FF" strokeWidth={3} fill="url(#colorOrders)" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </Box>
                     </Card>
                 </Grid>
-
-                {/* Pie Chart */}
                 <Grid item size={{ xs: 12, lg: 4 }}>
                     <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid #e0e0e0', height: 450, display: 'flex', flexDirection: 'column' }}>
-                        <Box sx={{ p: 3, borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <DonutSmallIcon sx={{ color: theme.palette.secondary.main }} />
-                            <Box>
-                                <Typography variant="h6" fontWeight="800">สัดส่วนสินค้า</Typography>
-                                <Typography variant="caption" color="text.secondary">แยกตามหมวดหมู่ (%)</Typography>
-                            </Box>
-                        </Box>
+                        <Box sx={{ p: 3, borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 1 }}><DonutSmallIcon sx={{ color: theme.palette.secondary.main }} /><Box><Typography variant="h6" fontWeight="800">สัดส่วนสินค้า</Typography><Typography variant="caption" color="text.secondary">แยกตามหมวดหมู่ (%)</Typography></Box></Box>
                         <Box sx={{ flex: 1, position: 'relative', width: '100%', minHeight: 0 }}>
                             {categoryData.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
@@ -541,117 +599,97 @@ const Dashboard = () => {
                 </Grid>
             </Grid>
 
-            {/* --- 4. Grid Row 3: Data & Lists --- */}
+            {/* --- Data & Lists --- */}
             <Grid container spacing={3}>
-                
-                {/* 🔴 Left Column (6): Recent Orders (Data Table) */}
                 <Grid item size={{ xs: 12, lg: 6 }}>
                     <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid #e0e0e0', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                         <Box sx={{ px: 3, pt: 3, pb: 2, display: 'flex', flexDirection: {xs: 'column', sm: 'row'}, justifyContent: 'space-between', alignItems: {xs: 'flex-start', sm: 'center'}, gap: 2 }}>
-                            <Box>
-                                <Typography variant="h6" fontWeight="800">รายการขายล่าสุด</Typography>
-                                <Typography variant="caption" color="text.secondary">ข้อมูลตารางยอดขาย</Typography>
-                            </Box>
-                            <TextField 
-                                size="small"
-                                placeholder="ค้นหา..."
-                                variant="outlined"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                InputProps={{
-                                    startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" color="action" /></InputAdornment>),
-                                    sx: { borderRadius: 2, bgcolor: 'white', maxWidth: 150 }
-                                }}
-                            />
+                            <Box><Typography variant="h6" fontWeight="800">รายการขายล่าสุด</Typography><Typography variant="caption" color="text.secondary">ข้อมูลตารางยอดขาย</Typography></Box>
+                            <TextField size="small" placeholder="ค้นหา..." variant="outlined" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" color="action" /></InputAdornment>), sx: { borderRadius: 2, bgcolor: 'white', maxWidth: 150 } }} />
                         </Box>
                         <Divider />
                         <TableContainer sx={{ flex: 1, maxHeight: 600 }}>
                             <Table stickyHeader size="small">
-                                <TableHead sx={{ '& th': { bgcolor: '#F9FAFB' } }}>
-                                    <TableRow>
-                                        <TableCell sx={{ pl: 3, fontWeight: 700 }}>เลขที่บิล</TableCell>
-                                        <TableCell sx={{ fontWeight: 700 }}>เวลา</TableCell>
-                                        <TableCell sx={{ fontWeight: 700 }}>ยอดสุทธิ</TableCell>
-                                        <TableCell sx={{ fontWeight: 700 }}>สถานะ</TableCell>
-                                    </TableRow>
-                                </TableHead>
+                                <TableHead sx={{ '& th': { bgcolor: '#F9FAFB' } }}><TableRow><TableCell sx={{ pl: 3, fontWeight: 700 }}>เลขที่บิล</TableCell><TableCell sx={{ fontWeight: 700 }}>เวลา</TableCell><TableCell sx={{ fontWeight: 700 }}>ยอดสุทธิ</TableCell><TableCell sx={{ fontWeight: 700 }}>สถานะ</TableCell></TableRow></TableHead>
                                 <TableBody>
                                     {paginatedData.map((order) => (
                                         <TableRow key={order.id} hover sx={{ '& td': { borderBottom: '1px solid #F2F4F7' } }}>
-                                            {/* Clickable Order Number */}
-                                            <TableCell sx={{ pl: 3 }}>
-                                                <Typography 
-                                                    variant="subtitle2" 
-                                                    fontFamily="monospace" 
-                                                    fontWeight="700" 
-                                                    color="primary.main"
-                                                    sx={{ cursor: 'pointer', textDecoration: 'underline' }}
-                                                    onClick={() => handleOpenReceipt(order)}
-                                                >
-                                                    {order.order_number}
-                                                </Typography>
-                                            </TableCell>
-                                            <TableCell><Typography variant="body2">{order.transaction_date && order.transaction_date.seconds ? new Date(order.transaction_date.seconds * 1000).toLocaleDateString('th-TH') : '-'}</Typography></TableCell>
+                                            <TableCell sx={{ pl: 3 }}><Typography variant="subtitle2" fontFamily="monospace" fontWeight="700" color="primary.main" sx={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => handleOpenReceipt(order)}>{order.order_number}</Typography></TableCell>
+                                            <TableCell><Typography variant="body2">{order.transaction_date && order.transaction_date.seconds ? dayjs(order.transaction_date.seconds * 1000).format('D MMM BBBB HH:mm') : '-'}</Typography></TableCell>
                                             <TableCell><Typography variant="subtitle2" fontWeight="800" sx={{ color: '#00AB55' }}>฿{Number(order.grand_total).toLocaleString()}</Typography></TableCell>
-                                            <TableCell>
-                                                {/* ✅ เรียกใช้ฟังก์ชัน renderStatus ที่เหมือน History.jsx */}
-                                                {renderStatus(order.status)}
-                                            </TableCell>
+                                            <TableCell>{renderStatus(order.status)}</TableCell>
                                         </TableRow>
                                     ))}
                                     {paginatedData.length === 0 && <TableRow><TableCell colSpan={4} align="center" sx={{ py: 6 }}><Typography color="text.secondary">ไม่พบข้อมูล</Typography></TableCell></TableRow>}
                                 </TableBody>
                             </Table>
                         </TableContainer>
-                        <TablePagination
-                            rowsPerPageOptions={[5, 10]}
-                            component="div"
-                            count={filteredTableData.length}
-                            rowsPerPage={rowsPerPage}
-                            page={page}
-                            onPageChange={handlePageChange}
-                            onRowsPerPageChange={handleRowsPerPageChange}
-                            labelRowsPerPage="แถว:"
-                        />
+                        <TablePagination rowsPerPageOptions={[5, 10]} component="div" count={filteredTableData.length} rowsPerPage={rowsPerPage} page={page} onPageChange={handlePageChange} onRowsPerPageChange={handleRowsPerPageChange} labelRowsPerPage="แถว:" />
                     </Card>
                 </Grid>
 
-                {/* 🟡 Middle Column (3): Low Stock */}
+                {/* ✅ Low Stock Section (New List Style) */}
                 <Grid item size={{ xs: 12, md: 6, lg: 3 }}>
                     <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid #e0e0e0', height: '100%' }}>
-                        <CardHeader title="สินค้าต้องเติมสต็อก" titleTypographyProps={{ fontWeight: 800, fontSize: '0.95rem', color: 'error.main' }} action={<Chip label={lowStockItems.length} color="error" size="small" />} sx={{ px: 3, pt: 3, pb: 1 }} />
-                        <Divider />
-                        <TableContainer sx={{ maxHeight: 400 }}>
-                            <Table size="small">
-                                <TableBody>
-                                    {lowStockItems.length > 0 ? (
-                                        lowStockItems.map((item) => (
-                                            <TableRow key={item.id} hover>
-                                                <TableCell sx={{ pl: 3, py: 1.5 }}><Typography variant="body2" fontWeight="600" noWrap sx={{ maxWidth: 120 }}>{item.product_name}</Typography></TableCell>
-                                                <TableCell align="right" sx={{ pr: 3 }}><Chip label={item.stock_quantity} color={Number(item.stock_quantity) === 0 ? "error" : "warning"} size="small" sx={{ fontWeight: 800, minWidth: 40, height: 24 }} /></TableCell>
-                                            </TableRow>
-                                        ))
-                                    ) : (<TableRow><TableCell colSpan={2} align="center" sx={{ py: 3 }}><Typography color="text.secondary" variant="caption">สต็อกปกติทุกรายการ</Typography></TableCell></TableRow>)}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
+                        <Box sx={{ p: 3, borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <WarningAmberIcon sx={{ color: theme.palette.warning.main }} />
+                            <Typography variant="h6" fontWeight="800">ต้องเติมสต็อก</Typography>
+                            <Chip label={lowStockItems.length} color="error" size="small" sx={{ ml: 'auto', fontWeight: 'bold' }} />
+                        </Box>
+                        <List sx={{ py: 0, overflowY: 'auto', maxHeight: 400 }}>
+                            {lowStockItems.map((item, index) => (
+                                <React.Fragment key={item.id}>
+                                    <ListItem alignItems="center" sx={{ py: 1.5 }}>
+                                        <ListItemAvatar>
+                                            <Avatar
+                                                variant="rounded"
+                                                src={item.image_url}
+                                                sx={{
+                                                    bgcolor: alpha(theme.palette.warning.main, 0.1),
+                                                    color: theme.palette.warning.main,
+                                                    width: 36,
+                                                    height: 36
+                                                }}
+                                            >
+                                                <Inventory2Icon fontSize="small" />
+                                            </Avatar>
+                                        </ListItemAvatar>
+                                        <ListItemText
+                                            primary={<Typography variant="subtitle2" fontWeight="bold" noWrap>{item.product_name}</Typography>}
+                                            secondary={<Typography variant="caption" color="text.secondary">คงเหลือ: {item.stock_quantity}</Typography>}
+                                        />
+                                        <Box textAlign="right">
+                                            <Chip
+                                                label={item.stock_quantity === 0 ? "หมด" : "ต่ำ"}
+                                                size="small"
+                                                sx={{
+                                                    bgcolor: item.stock_quantity === 0 ? alpha(theme.palette.error.main, 0.1) : alpha(theme.palette.warning.main, 0.1),
+                                                    color: item.stock_quantity === 0 ? theme.palette.error.main : theme.palette.warning.main,
+                                                    fontWeight: 'bold',
+                                                    height: 24,
+                                                    fontSize: '0.75rem'
+                                                }}
+                                            />
+                                        </Box>
+                                    </ListItem>
+                                    {index < lowStockItems.length - 1 && <Divider variant="inset" component="li" />}
+                                </React.Fragment>
+                            ))}
+                            {lowStockItems.length === 0 && (
+                                <Box p={3} textAlign="center"><Typography variant="caption" color="text.secondary">สต็อกปกติทุกรายการ</Typography></Box>
+                            )}
+                        </List>
                     </Card>
                 </Grid>
 
-                {/* 🟢 Right Column (3): Top 5 Products */}
                 <Grid item size={{ xs: 12, md: 6, lg: 3 }}>
                      <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid #e0e0e0', height: '100%' }}>
-                        <Box sx={{ p: 3, borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <EmojiEventsIcon sx={{ color: '#FFC107' }} />
-                            <Typography variant="h6" fontWeight="800">5 สินค้าขายดี</Typography>
-                        </Box>
+                        <Box sx={{ p: 3, borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 1 }}><EmojiEventsIcon sx={{ color: '#FFC107' }} /><Typography variant="h6" fontWeight="800">5 สินค้าขายดี</Typography></Box>
                         <List sx={{ py: 0 }}>
                             {topProducts.map((product, index) => (
                                 <React.Fragment key={product.id}>
                                     <ListItem alignItems="center" sx={{ py: 1.5 }}>
-                                        <ListItemAvatar>
-                                            <Avatar variant="rounded" src={product.image} sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: theme.palette.primary.main, width: 36, height: 36 }}><Inventory2Icon fontSize="small" /></Avatar>
-                                        </ListItemAvatar>
+                                        <ListItemAvatar><Avatar variant="rounded" src={product.image} sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: theme.palette.primary.main, width: 36, height: 36 }}><Inventory2Icon fontSize="small" /></Avatar></ListItemAvatar>
                                         <ListItemText primary={<Typography variant="subtitle2" fontWeight="bold" noWrap>{product.name}</Typography>} secondary={<Typography variant="caption" color="text.secondary">เหลือ {product.stock}</Typography>} />
                                         <Box textAlign="right"><Typography variant="subtitle2" fontWeight="800" color="success.main">{product.sold}</Typography></Box>
                                     </ListItem>
@@ -662,83 +700,25 @@ const Dashboard = () => {
                         </List>
                     </Card>
                 </Grid>
-
             </Grid>
 
             {/* --- Receipt Dialog --- */}
-            <Dialog
-                open={openReceipt}
-                onClose={handleCloseReceipt}
-                maxWidth="xs"
-                PaperProps={{ sx: { borderRadius: 2, width: 350 } }}
-            >
+            <Dialog open={openReceipt} onClose={handleCloseReceipt} maxWidth="xs" PaperProps={{ sx: { borderRadius: 2, width: 350 } }}>
                 <DialogContent sx={{ p: 0 }}>
                     <Box ref={receiptRef} sx={{ p: 3, bgcolor: 'white', color: 'black', fontFamily: 'monospace' }}>
-                        <Box textAlign="center" mb={2}>
-                            <CheckCircleIcon color="success" sx={{ fontSize: 40, mb: 1 }} />
-                            <Typography variant="h6" fontWeight="bold">ชำระเงินสำเร็จ</Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {selectedOrder?.transaction_date?.seconds ? new Date(selectedOrder.transaction_date.seconds * 1000).toLocaleString('th-TH') : ''}
-                            </Typography>
-                        </Box>
-
+                        <Box textAlign="center" mb={2}><CheckCircleIcon color="success" sx={{ fontSize: 40, mb: 1 }} /><Typography variant="h6" fontWeight="bold">ชำระเงินสำเร็จ</Typography><Typography variant="caption" color="text.secondary">{selectedOrder?.transaction_date?.seconds ? dayjs(selectedOrder.transaction_date.seconds * 1000).format('D MMM BBBB HH:mm') : ''}</Typography></Box>
                         <Divider sx={{ my: 2, borderStyle: 'dashed' }} />
-
-                        <Box textAlign="center" mb={2}>
-                            <Typography fontWeight="bold" variant="subtitle1">Three Shop</Typography>
-                            <Typography variant="caption" display="block">เลขที่ใบเสร็จ: {selectedOrder?.order_number}</Typography>
-                            <Typography variant="caption" display="block">พนักงาน: {selectedOrder?.cashier_name || 'Admin'}</Typography>
-                        </Box>
-
+                        <Box textAlign="center" mb={2}><Typography fontWeight="bold" variant="subtitle1">Three Shop</Typography><Typography variant="caption" display="block">เลขที่ใบเสร็จ: {selectedOrder?.order_number}</Typography><Typography variant="caption" display="block">พนักงาน: {selectedOrder?.cashier_name || 'Admin'}</Typography></Box>
                         <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
-
-                        <Box>
-                            {selectedOrder?.items?.map((item, index) => (
-                                <Box key={index} display="flex" justifyContent="space-between" mb={0.5}>
-                                    <Box sx={{ width: '60%' }}>
-                                        <Typography variant="caption" fontWeight="bold">{item.product_name || item.name}</Typography>
-                                        <Typography variant="caption" display="block" color="text.secondary">
-                                            {item.qty || item.quantity} x {Number(item.selling_price || item.price).toLocaleString()}
-                                        </Typography>
-                                    </Box>
-                                    <Typography variant="caption" fontWeight="bold">
-                                        {(item.total_line || ((item.qty || item.quantity) * (item.selling_price || item.price))).toLocaleString()}
-                                    </Typography>
-                                </Box>
-                            ))}
-                        </Box>
-
+                        <Box>{selectedOrder?.items?.map((item, index) => (<Box key={index} display="flex" justifyContent="space-between" mb={0.5}><Box sx={{ width: '60%' }}><Typography variant="caption" fontWeight="bold">{item.product_name || item.name}</Typography><Typography variant="caption" display="block" color="text.secondary">{item.qty || item.quantity} x {Number(item.selling_price || item.price).toLocaleString()}</Typography></Box><Typography variant="caption" fontWeight="bold">{(item.total_line || ((item.qty || item.quantity) * (item.selling_price || item.price))).toLocaleString()}</Typography></Box>))}</Box>
                         <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
-
-                        <Box display="flex" justifyContent="space-between">
-                            <Typography variant="caption">รวมเป็นเงิน</Typography>
-                            <Typography variant="caption">{selectedOrder?.subtotal?.toLocaleString()}</Typography>
-                        </Box>
-                        {selectedOrder?.discount > 0 && (
-                            <Box display="flex" justifyContent="space-between" color="error.main">
-                                <Typography variant="caption">ส่วนลด</Typography>
-                                <Typography variant="caption">-{selectedOrder?.discount?.toLocaleString()}</Typography>
-                            </Box>
-                        )}
-                        <Box display="flex" justifyContent="space-between" mt={1}>
-                            <Typography variant="subtitle2" fontWeight="bold">ยอดสุทธิ</Typography>
-                            <Typography variant="subtitle2" fontWeight="bold">{selectedOrder?.grand_total?.toLocaleString()}</Typography>
-                        </Box>
-
+                        <Box display="flex" justifyContent="space-between"><Typography variant="caption">รวมเป็นเงิน</Typography><Typography variant="caption">{selectedOrder?.subtotal?.toLocaleString()}</Typography></Box>
+                        {selectedOrder?.discount > 0 && (<Box display="flex" justifyContent="space-between" color="error.main"><Typography variant="caption">ส่วนลด</Typography><Typography variant="caption">-{selectedOrder?.discount?.toLocaleString()}</Typography></Box>)}
+                        <Box display="flex" justifyContent="space-between" mt={1}><Typography variant="subtitle2" fontWeight="bold">ยอดสุทธิ</Typography><Typography variant="subtitle2" fontWeight="bold">{selectedOrder?.grand_total?.toLocaleString()}</Typography></Box>
                         <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
-
-                        <Box display="flex" justifyContent="space-between">
-                            <Typography variant="caption">ชำระโดย ({selectedOrder?.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'})</Typography>
-                            <Typography variant="caption">{selectedOrder?.received_amount?.toLocaleString()}</Typography>
-                        </Box>
-                        <Box display="flex" justifyContent="space-between">
-                            <Typography variant="caption">เงินทอน</Typography>
-                            <Typography variant="caption">{selectedOrder?.change_amount?.toLocaleString()}</Typography>
-                        </Box>
-
-                        <Box textAlign="center" mt={3}>
-                            <Typography variant="caption" color="text.secondary">ขอบคุณที่ใช้บริการ</Typography>
-                        </Box>
+                        <Box display="flex" justifyContent="space-between"><Typography variant="caption">ชำระโดย ({selectedOrder?.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'})</Typography><Typography variant="caption">{selectedOrder?.received_amount?.toLocaleString()}</Typography></Box>
+                        <Box display="flex" justifyContent="space-between"><Typography variant="caption">เงินทอน</Typography><Typography variant="caption">{selectedOrder?.change_amount?.toLocaleString()}</Typography></Box>
+                        <Box textAlign="center" mt={3}><Typography variant="caption" color="text.secondary">ขอบคุณที่ใช้บริการ</Typography></Box>
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ p: 2, display: 'flex', gap: 1 }}>
