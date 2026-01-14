@@ -452,7 +452,7 @@ const Dashboard = () => {
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="th">
-        <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', m: -3, pb: 6 }}>
+        <Box sx={{  minHeight: '100vh', m: -3, pb: 6 }}>
         <Container maxWidth={false} sx={{ pt: 4, px: { xs: 2, md: 4 } }}> 
             
             <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems="center" mb={4} spacing={2}>
@@ -509,7 +509,7 @@ const Dashboard = () => {
                     <KpiCard 
                         title={`ยอดขาย ${getPeriodLabel(kpiFilter)}`} 
                         value={`฿${summary.periodSales.toLocaleString()}`} 
-                        icon={<MonetizationOnIcon sx={{ fontSize: 28 }} />} 
+                        icon={<MonetizationOnIcon sx={{ fontSize: 60 }} />} 
                         color={theme.palette.success.main} 
                         trend={`${summary.salesGrowth > 0 ? '+' : ''}${summary.salesGrowth.toFixed(1)}%`}
                         trendColor={summary.salesGrowth >= 0 ? theme.palette.success.main : theme.palette.error.main}
@@ -522,7 +522,7 @@ const Dashboard = () => {
                     <KpiCard 
                         title={`กำไร ${getPeriodLabel(kpiFilter)}`} 
                         value={`฿${summary.periodProfit.toLocaleString()}`} 
-                        icon={<ShowChartIcon sx={{ fontSize: 28 }} />} 
+                        icon={<ShowChartIcon sx={{ fontSize: 60 }} />} 
                         color={theme.palette.secondary.main} 
                     />
                 </Grid>
@@ -532,12 +532,12 @@ const Dashboard = () => {
                     <KpiCard 
                         title={`จำนวนออเดอร์ ${getPeriodLabel(kpiFilter)}`} 
                         value={summary.periodOrders} 
-                        icon={<ReceiptLongIcon sx={{ fontSize: 28 }} />} 
+                        icon={<ReceiptLongIcon sx={{ fontSize: 60 }} />} 
                         color={theme.palette.info.main} 
                     />
                 </Grid>
 
-                <Grid item size={{ xs: 12, sm: 6, lg: 3 }} ><KpiCard title="สินค้าใกล้หมด" value={summary.lowStockCount} icon={<WarningAmberIcon sx={{ fontSize: 28 }} />} color={theme.palette.warning.main} trend={summary.lowStockCount > 0 ? "Alert" : null} /></Grid>
+                <Grid item size={{ xs: 12, sm: 6, lg: 3 }} ><KpiCard title="สินค้าใกล้หมด" value={summary.lowStockCount} icon={<WarningAmberIcon sx={{ fontSize: 60 }} />} color={theme.palette.warning.main} trend={summary.lowStockCount > 0 ? "Alert" : null} /></Grid>
             </Grid>
 
             {/* --- Chart Section --- */}

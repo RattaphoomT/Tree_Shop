@@ -217,7 +217,7 @@ const History = () => {
   if (loading) return <Box height="100vh" display="flex" alignItems="center" justifyContent="center"><CircularProgress /></Box>;
 
   return (
-    <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', pb: 6 }}>
+    <Box sx={{ minHeight: '100vh', pb: 6 }}>
       <Container maxWidth={false} sx={{ pt: 4, px: { xs: 2, md: 4 } }}>
         
         {/* --- Header Section --- */}
