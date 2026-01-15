@@ -23,6 +23,9 @@ import Swal from "sweetalert2";
 import Barcode from "react-barcode";
 import { useReactToPrint } from "react-to-print";
 
+// --- AI Library (Google Gemini) ---
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 // --- Material UI Imports ---
 import {
   Container,
@@ -60,7 +63,9 @@ import {
   Avatar,
   TablePagination,
   CircularProgress,
-  Backdrop,
+  Card,
+  CardContent,
+  useTheme,
 } from "@mui/material";
 
 // --- Icons Imports ---
@@ -86,7 +91,17 @@ import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchange';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import ClassIcon from '@mui/icons-material/Class';
 import TagIcon from '@mui/icons-material/Tag'; 
+import CameraAltIcon from '@mui/icons-material/CameraAlt'; 
+import CloudUploadIcon from '@mui/icons-material/CloudUpload'; 
+import SaveAsIcon from '@mui/icons-material/SaveAs'; 
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
+import LocationOnIcon from '@mui/icons-material/LocationOn';
+
 import { visuallyHidden } from "@mui/utils";
+
+// ================= API CONFIG =================
+// ⚠️ API Key ของคุณ
+const API_KEY = "AIzaSyDECybHlJ6xqmenjH8wipQNceto-QCnDE0"; 
 
 // ================= SORTING HELPERS =================
 function descendingComparator(a, b, orderBy) {
@@ -129,6 +144,8 @@ const headCells = [
 ];
 
 const Product = () => {
+  const theme = useTheme();
+
   // ================= STATE MANAGEMENT =================
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -147,16 +164,14 @@ const Product = () => {
   const [errors, setErrors] = useState({});
   const [data, setData] = useState([]);
   const [categories, setCategories] = useState([]);
-
-  // ✅ State สำหรับเก็บรหัสขึ้นต้น
   const [genPrefix, setGenPrefix] = useState("");
 
-  // --- Filter & Search State ---
+  // --- Filter & Search ---
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
 
-  // --- Pagination & Sorting State ---
+  // --- Pagination & Sorting ---
   const [order, setOrder] = useState("asc");
   const [orderBy, setOrderBy] = useState("product_name");
   const [page, setPage] = useState(0);
@@ -169,24 +184,31 @@ const Product = () => {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
 
-  // --- Transaction History State ---
+  // --- Transaction History ---
   const [openHistoryDialog, setOpenHistoryDialog] = useState(false);
   const [historyData, setHistoryData] = useState([]);
   const [selectedProductHistory, setSelectedProductHistory] = useState(null);
   const [historyFilterDate, setHistoryFilterDate] = useState(""); 
   const [historyFilterType, setHistoryFilterType] = useState("all");
-
-  // --- History DataTable State ---
   const [historyPage, setHistoryPage] = useState(0);
   const [historyRowsPerPage, setHistoryRowsPerPage] = useState(5);
   const [historyOrder, setHistoryOrder] = useState('desc');
   const [historyOrderBy, setHistoryOrderBy] = useState('transaction_date');
 
-  // --- Barcode & Selection States ---
+  // --- Barcode & Selection ---
   const [selectedIds, setSelectedIds] = useState([]);
   const [openBarcodeDialog, setOpenBarcodeDialog] = useState(false);
   const [itemsToPrint, setItemsToPrint] = useState([]);
   const componentRef = useRef();
+
+  // --- AI / Bill Scan ---
+  const [openScanDialog, setOpenScanDialog] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scannedItems, setScannedItems] = useState([]);
+  const [scannedImage, setScannedImage] = useState(null);
+  
+  // ✅ NEW: Prefix for AI Scan
+  const [scannedPrefix, setScannedPrefix] = useState("");
 
   const refProductTable = collection(db, "Products");
   const refCategoryTable = collection(db, "Categories");
@@ -275,14 +297,7 @@ const Product = () => {
   const countPages = Math.ceil(filteredData.length / rowsPerPage);
 
   // ================= HELPER: RECORD FULL TRANSACTION =================
-  const recordTransaction = async (
-    productData,
-    type,
-    qtyChange,
-    prevStock,
-    currentStock,
-    note = ""
-  ) => {
+  const recordTransaction = async (productData, type, qtyChange, prevStock, currentStock, note = "") => {
     try {
       await addDoc(refTransactionTable, {
         product_id: productData.id || "",
@@ -291,12 +306,10 @@ const Product = () => {
         cost_price: parseFloat(productData.cost_price) || 0,
         selling_price: parseFloat(productData.selling_price) || 0,
         location: productData.location || "",
-
         transaction_type: type,
         quantity_change: qtyChange,
         previous_stock: prevStock,
         current_stock: currentStock,
-
         note: note,
         transaction_date: serverTimestamp(),
       });
@@ -323,19 +336,11 @@ const Product = () => {
     setSnackbar({ ...snackbar, open: false });
   };
 
-  // ✅ LOGIC: สุ่มรหัส (เฉพาะตัวเลข) ไม่เอารหัสขึ้นต้นมาแสดงในช่อง
   const handleGenerateBarcode = () => {
     let isUnique = false;
     let randomCode = "";
-    
     while (!isUnique) {
-      // สุ่มเฉพาะตัวเลข
       randomCode = Math.floor(10000000 + Math.random() * 90000000).toString();
-      
-      // ตรวจสอบความซ้ำ (รวม Prefix ในการเช็คด้วย เพื่อความชัวร์ หรือเช็คเฉพาะ random ก็ได้)
-      // ในที่นี้เรายังไม่เอา prefix มาต่อ จึงเช็คคร่าวๆ หรือถ้าจะให้ดีควรเช็ค prefix + randomCode
-      // แต่เนื่องจาก Prefix อยู่ใน state แยก การเช็คละเอียดต้องทำตอน Save
-      // เบื้องต้นสุ่มแค่ตัวเลขไปก่อน
       isUnique = true; 
     }
     setForm({ ...form, barcode: randomCode });
@@ -357,7 +362,6 @@ const Product = () => {
     setOpen(true);
   };
 
-  // ✅ LOGIC: บันทึกข้อมูล (นำ Prefix มาต่อกับ Barcode ที่นี่)
   const handleSaveProduct = async () => {
     const newErrors = {};
     if (!form.product_name) newErrors.product_name = "กรุณากรอกชื่อสินค้า";
@@ -371,13 +375,11 @@ const Product = () => {
     }
 
     const currentQty = parseInt(form.stock_quantity);
-    
-    // ✅ รวมรหัส: Prefix + Barcode (ตัดช่องว่างออก)
     const finalBarcode = (genPrefix || "").trim() + form.barcode.trim();
 
     const payload = {
       ...form,
-      barcode: finalBarcode, // ใช้รหัสที่รวมแล้ว
+      barcode: finalBarcode,
       cost_price: parseFloat(form.cost_price),
       selling_price: parseFloat(form.selling_price),
       stock_quantity: currentQty,
@@ -385,70 +387,23 @@ const Product = () => {
 
     try {
       if (editId) {
-        // --- CASE: UPDATE ---
         const oldData = data.find((d) => d.id === editId);
         const oldQty = oldData ? parseInt(oldData.stock_quantity) : 0;
 
         await updateDoc(doc(db, "Products", editId), payload);
 
         const isStockChanged = oldQty !== currentQty;
-        const isCostChanged = parseFloat(oldData.cost_price) !== payload.cost_price;
-        const isSellingChanged = parseFloat(oldData.selling_price) !== payload.selling_price;
-        const isInfoChanged = oldData.product_name !== payload.product_name;
-
         if (isStockChanged) {
           const diff = currentQty - oldQty;
           const type = diff > 0 ? "stock_in_edit" : "stock_out_edit";
-          await recordTransaction(
-            { id: editId, ...payload },
-            type,
-            diff,
-            oldQty,
-            currentQty,
-            "แก้ไขจำนวนสต็อก"
-          );
-        } else if (isCostChanged || isSellingChanged) {
-          let note = "";
-          if(isCostChanged && isSellingChanged) note = "ปรับทั้งราคาทุนและราคาขาย";
-          else if(isCostChanged) note = "ปรับราคาทุน";
-          else if(isSellingChanged) note = "ปรับราคาขาย";
-
-          await recordTransaction(
-            { id: editId, ...payload },
-            "price_change",
-            0,
-            oldQty,
-            currentQty,
-            note 
-          );
-        } else if (isInfoChanged) {
-          await recordTransaction(
-            { id: editId, ...payload },
-            "edit_info",
-            0,
-            oldQty,
-            currentQty,
-            "แก้ไขข้อมูลทั่วไป"
-          );
+          await recordTransaction({ id: editId, ...payload }, type, diff, oldQty, currentQty, "แก้ไขจำนวนสต็อก");
+        } else {
+             await recordTransaction({ id: editId, ...payload }, "edit_info", 0, oldQty, currentQty, "แก้ไขข้อมูลสินค้า");
         }
-
         showSnackbar("อัปเดตข้อมูลเรียบร้อยแล้ว", "success");
       } else {
-        // --- CASE: CREATE NEW ---
-        const docRef = await addDoc(refProductTable, {
-          ...payload,
-          created_at: serverTimestamp(),
-        });
-
-        await recordTransaction(
-          { id: docRef.id, ...payload },
-          "new_product",
-          currentQty,
-          0,
-          currentQty,
-          "เพิ่มสินค้าใหม่เข้าระบบ"
-        );
-
+        const docRef = await addDoc(refProductTable, { ...payload, created_at: serverTimestamp() });
+        await recordTransaction({ id: docRef.id, ...payload }, "new_product", currentQty, 0, currentQty, "เพิ่มสินค้าใหม่เข้าระบบ");
         showSnackbar("เพิ่มสินค้าใหม่เรียบร้อยแล้ว", "success");
       }
       setForm(initialFormState);
@@ -460,7 +415,6 @@ const Product = () => {
     }
   };
 
-  // ✅ LOGIC: DELETE PRODUCT & HISTORY
   const handleDeleteProduct = (id) => {
     Swal.fire({
       title: "ยืนยันการลบ?",
@@ -477,18 +431,10 @@ const Product = () => {
         try {
           const q = query(refTransactionTable, where("product_id", "==", id));
           const querySnapshot = await getDocs(q);
-
           const batch = writeBatch(db);
-          querySnapshot.forEach((doc) => {
-            batch.delete(doc.ref);
-          });
-          
-          if (!querySnapshot.empty) {
-             await batch.commit();
-          }
-
+          querySnapshot.forEach((doc) => batch.delete(doc.ref));
+          if (!querySnapshot.empty) await batch.commit();
           await deleteDoc(doc(refProductTable, id));
-          
           showSnackbar("ลบข้อมูลและประวัติเรียบร้อยแล้ว", "success");
         } catch (err) {
           console.error("Error deleting product:", err);
@@ -513,7 +459,6 @@ const Product = () => {
     }
   };
 
-  // --- History Dialog Handler ---
   const handleOpenHistory = async (item) => {
     setSelectedProductHistory(item);
     setHistoryData([]);
@@ -521,7 +466,6 @@ const Product = () => {
     setHistoryFilterType("all");
     setHistoryPage(0);
     setHistoryRowsPerPage(5);
-    
     setOpenHistoryDialog(true);
     setHistoryLoading(true);
 
@@ -532,16 +476,10 @@ const Product = () => {
         firestoreOrderBy("transaction_date", "desc")
       );
       const querySnapshot = await getDocs(q);
-      const logs = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const logs = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setHistoryData(logs);
     } catch (error) {
       console.error("Error fetching history:", error);
-      if (error.code === "failed-precondition") {
-        alert("กรุณาเปิด Console (F12) เพื่อกดลิงก์สร้าง Index ใน Firebase");
-      }
     } finally {
         setHistoryLoading(false); 
     }
@@ -576,20 +514,13 @@ const Product = () => {
             : "";
         matchDate = logDate === historyFilterDate;
     }
-
     let matchType = true;
     if (historyFilterType !== "all") {
-        if (historyFilterType === "in") {
-            matchType = log.transaction_type.includes("in") || log.transaction_type === "new_product";
-        } else if (historyFilterType === "out") {
-            matchType = log.transaction_type.includes("out") || log.transaction_type.includes("delete");
-        } else if (historyFilterType === "price") {
-            matchType = log.transaction_type === "price_change";
-        } else if (historyFilterType === "edit") {
-            matchType = log.transaction_type === "edit_info";
-        }
+        if (historyFilterType === "in") matchType = log.transaction_type.includes("in") || log.transaction_type === "new_product";
+        else if (historyFilterType === "out") matchType = log.transaction_type.includes("out") || log.transaction_type.includes("delete");
+        else if (historyFilterType === "price") matchType = log.transaction_type === "price_change";
+        else if (historyFilterType === "edit") matchType = log.transaction_type === "edit_info";
     }
-    
     return matchDate && matchType;
   });
 
@@ -598,30 +529,16 @@ const Product = () => {
       getComparator(historyOrder, historyOrderBy)
   ).slice(historyPage * historyRowsPerPage, historyPage * historyRowsPerPage + historyRowsPerPage);
 
-
-  // ================= UTILS & OTHERS =================
   const getCategoryName = (catId) => {
     const cat = categories.find((c) => c.id === catId);
-    return cat ? (
-      cat.category_name
-    ) : (
-      <span style={{ color: "#999", fontStyle: "italic" }}>ไม่ระบุ</span>
-    );
+    return cat ? cat.category_name : <span style={{ color: "#999", fontStyle: "italic" }}>ไม่ระบุ</span>;
   };
 
   const getStockStatus = (qty) => {
     const q = parseInt(qty);
-    if (q === 0)
-      return (
-        <Chip label="หมดสต็อก" color="error" size="small" variant="outlined" />
-      );
-    if (q < 10)
-      return (
-        <Chip label="ใกล้หมด" color="warning" size="small" variant="outlined" />
-      );
-    return (
-      <Chip label="พร้อมขาย" color="success" size="small" variant="outlined" />
-    );
+    if (q === 0) return <Chip label="หมดสต็อก" color="error" size="small" variant="outlined" />;
+    if (q < 10) return <Chip label="ใกล้หมด" color="warning" size="small" variant="outlined" />;
+    return <Chip label="พร้อมขาย" color="success" size="small" variant="outlined" />;
   };
 
   const handleResetFilter = () => {
@@ -631,7 +548,6 @@ const Product = () => {
     setSelectedIds([]);
   };
 
-  // --- Barcode Handlers ---
   const handleSelectAll = (event) => {
     if (event.target.checked) {
       const newSelecteds = visibleRows.map((n) => n.id);
@@ -644,18 +560,10 @@ const Product = () => {
   const handleSelectOne = (event, id) => {
     const selectedIndex = selectedIds.indexOf(id);
     let newSelected = [];
-    if (selectedIndex === -1) {
-      newSelected = newSelected.concat(selectedIds, id);
-    } else if (selectedIndex === 0) {
-      newSelected = newSelected.concat(selectedIds.slice(1));
-    } else if (selectedIndex === selectedIds.length - 1) {
-      newSelected = newSelected.concat(selectedIds.slice(0, -1));
-    } else if (selectedIndex > 0) {
-      newSelected = newSelected.concat(
-        selectedIds.slice(0, selectedIndex),
-        selectedIds.slice(selectedIndex + 1)
-      );
-    }
+    if (selectedIndex === -1) newSelected = newSelected.concat(selectedIds, id);
+    else if (selectedIndex === 0) newSelected = newSelected.concat(selectedIds.slice(1));
+    else if (selectedIndex === selectedIds.length - 1) newSelected = newSelected.concat(selectedIds.slice(0, -1));
+    else if (selectedIndex > 0) newSelected = newSelected.concat(selectedIds.slice(0, selectedIndex), selectedIds.slice(selectedIndex + 1));
     setSelectedIds(newSelected);
   };
 
@@ -672,8 +580,156 @@ const Product = () => {
 
   const handlePrint = useReactToPrint({ contentRef: componentRef });
 
+
+  // ================= AI / BILL SCAN LOGIC (GEMINI REAL) =================
+
+  const fileToGenerativePart = async (file) => {
+    const base64EncodedDataPromise = new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result.split(',')[1]);
+      reader.readAsDataURL(file);
+    });
+    return {
+      inlineData: { data: await base64EncodedDataPromise, mimeType: file.type },
+    };
+  };
+
+  const analyzeBillImage = async (file) => {
+    try {
+        if (!API_KEY || API_KEY.startsWith("วาง_KEY")) {
+            throw new Error("กรุณาใส่ API KEY ก่อนใช้งาน");
+        }
+
+        const genAI = new GoogleGenerativeAI(API_KEY);
+        // ✅ ใช้โมเดล gemini-2.5-flash
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+        const prompt = `
+          Task: Analyze this receipt/bill image and extract product items.
+          Context: You are an inventory assistant for a Thai shop.
+          Instructions:
+          1. Extract: product_name (Thai), selling_price (number), cost_price (number, if missing assume 70% of selling price), stock_quantity (number, default 1).
+          2. Generate: A random 8-digit 'barcode' for each item.
+          3. Format: Return ONLY a raw JSON array of objects. No markdown formatting.
+          4. Clean up names: Remove text like 'pcs', 'ea', prices in name.
+          Example Output: [{"product_name":"Lay Chips", "selling_price":30, "cost_price":20, "stock_quantity":2, "barcode":"12345678"}]
+        `;
+
+        const imagePart = await fileToGenerativePart(file);
+
+        const result = await model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        const text = response.text();
+
+        // Clean markdown backticks if present
+        const cleanedText = text.replace(/```json|```/g, '').trim();
+        return JSON.parse(cleanedText);
+
+    } catch (error) {
+        console.error("Gemini AI Error:", error);
+        throw error;
+    }
+  };
+
+  const handleUploadBill = async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => setScannedImage(e.target.result);
+      reader.readAsDataURL(file);
+
+      setIsScanning(true);
+      try {
+          const items = await analyzeBillImage(file);
+          
+          const formattedItems = items.map(item => ({
+              ...item,
+              Categories_category_id: categories.length > 0 ? categories[0].id : "",
+              location: "Store" // Default location
+          }));
+          
+          setScannedItems(formattedItems);
+          showSnackbar("อ่านข้อมูลสำเร็จ!", "success");
+
+      } catch (error) {
+          console.error("AI Error", error);
+          let errMsg = error.message;
+          if(errMsg.includes("404")) errMsg = "ไม่พบโมเดล AI (กรุณาตรวจสอบชื่อรุ่นโมเดล)";
+          showSnackbar(`เกิดข้อผิดพลาด: ${errMsg}`, "error");
+      } finally {
+          setIsScanning(false);
+      }
+  };
+
+  const handleScannedItemChange = (index, field, value) => {
+      const updated = [...scannedItems];
+      updated[index][field] = value;
+      setScannedItems(updated);
+  };
+
+  // ✅ NEW: Generate Random Barcode for specific item
+  const handleGenerateBarcodeForScannedItem = (index) => {
+      let randomCode = Math.floor(10000000 + Math.random() * 90000000).toString();
+      // ใช้ Prefix ที่ตั้งไว้ด้านบนมารวมด้วย
+      const finalCode = (scannedPrefix || "").trim() + randomCode;
+      handleScannedItemChange(index, 'barcode', finalCode);
+  };
+
+  const handleRemoveScannedItem = (index) => {
+      const updated = [...scannedItems];
+      updated.splice(index, 1);
+      setScannedItems(updated);
+  };
+
+  const handleSaveScannedItems = async () => {
+    setLoading(true);
+    try {
+        const batch = writeBatch(db); // Note: batch writes limits to 500 ops.
+        
+        const promises = scannedItems.map(async (item) => {
+            const payload = {
+                barcode: item.barcode || Math.floor(10000000 + Math.random() * 90000000).toString(),
+                product_name: item.product_name,
+                cost_price: parseFloat(item.cost_price),
+                selling_price: parseFloat(item.selling_price),
+                stock_quantity: parseInt(item.stock_quantity),
+                location: item.location,
+                Categories_category_id: item.Categories_category_id,
+                created_at: serverTimestamp()
+            };
+
+            const docRef = await addDoc(refProductTable, payload);
+            
+            await recordTransaction(
+                { id: docRef.id, ...payload },
+                "new_product",
+                parseInt(item.stock_quantity),
+                0,
+                parseInt(item.stock_quantity),
+                "นำเข้าจากบิล/AI"
+            );
+        });
+
+        await Promise.all(promises);
+
+        showSnackbar(`นำเข้าสินค้าสำเร็จ ${scannedItems.length} รายการ`, "success");
+        setOpenScanDialog(false);
+        setScannedItems([]);
+        setScannedImage(null);
+        setScannedPrefix(""); // Reset Prefix
+
+    } catch (error) {
+        console.error("Batch Import Error:", error);
+        showSnackbar("เกิดข้อผิดพลาดในการนำเข้าสินค้า", "error");
+    } finally {
+        setLoading(false);
+    }
+  };
+
+
   // ================= RENDER =================
-  if (loading) {
+  if (loading && !openScanDialog) {
       return (
           <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" height="100vh" bgcolor="#f5f5f5">
               <CircularProgress size={60} color="success" />
@@ -695,6 +751,8 @@ const Product = () => {
         justifyContent="space-between"
         alignItems="center"
         mb={3}
+        flexDirection={{ xs: "column", md: "row" }}
+        gap={2}
       >
         <Box>
           <Typography
@@ -712,7 +770,7 @@ const Product = () => {
             ภาพรวมรายการสต็อกทั้งหมด ( {data.length} รายการ )
           </Typography>
         </Box>
-        <Stack direction="row" spacing={2}>
+        <Stack direction="row" spacing={2} flexWrap="wrap" justifyContent={{ xs: 'center', md: 'flex-end' }}>
           {selectedIds.length > 0 && (
             <Button
               variant="contained"
@@ -724,6 +782,27 @@ const Product = () => {
               พิมพ์ Barcode ({selectedIds.length})
             </Button>
           )}
+          
+          {/* ✅ Scan Bill Button */}
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<CameraAltIcon />}
+            onClick={() => setOpenScanDialog(true)}
+            sx={{
+              borderRadius: 2,
+              px: 3,
+              py: 1.5,
+              textTransform: "none",
+              fontSize: "1rem",
+              boxShadow: 3,
+              background: 'linear-gradient(45deg, #7b1fa2 30%, #ce93d8 90%)',
+              color: 'white'
+            }}
+          >
+            สแกนบิลสินค้า (AI)
+          </Button>
+
           <Button
             variant="contained"
             size="large"
@@ -1094,7 +1173,281 @@ const Product = () => {
         </Box>
       </TableContainer>
 
-      {/* --- DIALOG: STOCK HISTORY (UI ใหม่ - DataTable) --- */}
+      {/* --- DIALOG: SCAN BILL (AI IMPORT - PROFESSIONAL UI) --- */}
+      <Dialog 
+        open={openScanDialog} 
+        onClose={() => setOpenScanDialog(false)} 
+        maxWidth="xl" 
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', height: '90vh' } }}
+      >
+        <Box sx={{ 
+            background: 'linear-gradient(45deg, #7b1fa2 30%, #ce93d8 90%)', 
+            color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            boxShadow: 3, zIndex: 1
+        }}>
+            <Box display="flex" alignItems="center" gap={2}>
+                <Avatar sx={{ bgcolor: 'white', color: '#7b1fa2' }}><CameraAltIcon /></Avatar>
+                <Box>
+                    <Typography variant="h6" fontWeight="bold">สแกนบิลสินค้าด้วย AI</Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                        {scannedItems.length > 0 ? `ตรวจสอบรายการสินค้าที่พบ (${scannedItems.length} รายการ)` : "อัปโหลดรูปภาพบิลหรือใบเสร็จ"}
+                    </Typography>
+                </Box>
+            </Box>
+            <IconButton onClick={() => setOpenScanDialog(false)} sx={{ color: 'white' }}>
+                <CloseIcon />
+            </IconButton>
+        </Box>
+
+        <DialogContent dividers sx={{ p: 0, bgcolor: '#f4f6f8', display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {scannedItems.length === 0 && !isScanning ? (
+                // --- STAGE 1: UPLOAD (Clean Center Layout) ---
+                <Box 
+                    display="flex" 
+                    flexDirection="column" 
+                    alignItems="center" 
+                    justifyContent="center" 
+                    height="100%"
+                    p={4}
+                >
+                    <Paper 
+                        elevation={0} 
+                        sx={{ 
+                            p: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', 
+                            border: '2px dashed #ccc', borderRadius: 4, bgcolor: 'white',
+                            cursor: 'pointer', transition: '0.3s',
+                            '&:hover': { borderColor: '#7b1fa2', bgcolor: '#f3e5f5' }
+                        }}
+                        component="label"
+                    >
+                        <CloudUploadIcon sx={{ fontSize: 80, color: '#bdbdbd', mb: 2 }} />
+                        <Typography variant="h6" color="text.secondary" gutterBottom>ลากไฟล์มาวางที่นี่</Typography>
+                        <Typography variant="body2" color="text.disabled" gutterBottom>หรือคลิกเพื่อเลือกไฟล์รูปภาพ</Typography>
+                        <Button
+                            variant="contained"
+                            component="span" // Important for label wrap
+                            startIcon={<PhotoLibraryIcon />}
+                            sx={{ mt: 3, bgcolor: '#9c27b0', borderRadius: 5, px: 4, py: 1, '&:hover': { bgcolor: '#7b1fa2' } }}
+                        >
+                            เลือกรูปภาพ
+                        </Button>
+                        <input hidden accept="image/*" type="file" onChange={handleUploadBill} />
+                    </Paper>
+                </Box>
+            ) : isScanning ? (
+                // --- STAGE 2: PROCESSING (Modern Loading) ---
+                <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" height="100%">
+                    <Box position="relative" display="inline-flex">
+                        <CircularProgress size={80} sx={{ color: '#9c27b0' }} thickness={4} />
+                        <Box
+                            top={0} left={0} bottom={0} right={0}
+                            position="absolute" display="flex" alignItems="center" justifyContent="center"
+                        >
+                            <CameraAltIcon sx={{ color: '#ce93d8', fontSize: 30 }} />
+                        </Box>
+                    </Box>
+                    <Typography variant="h6" sx={{ mt: 3, color: '#4a4a4a', fontWeight: 'bold' }}>AI กำลังอ่านข้อมูล...</Typography>
+                    <Typography variant="body2" color="text.secondary">ระบบกำลังวิเคราะห์ชื่อ ราคา และจำนวนสินค้าจากภาพ</Typography>
+                </Box>
+            ) : (
+                // --- STAGE 3: REVIEW (Split Layout Professional) ---
+                <Grid container sx={{ height: '100%' }}>
+                    {/* Left Panel: Image Preview (Sticky) */}
+                    <Grid item size={{ xs: 12, md: 4, lg: 3 }} sx={{ borderRight: '1px solid #e0e0e0', bgcolor: 'white', display: 'flex', flexDirection: 'column' }}>
+                        <Box p={2} borderBottom="1px solid #eee">
+                            <Typography variant="subtitle2" color="text.secondary" fontWeight="bold">
+                                <PhotoLibraryIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 1 }} />
+                                ต้นฉบับ
+                            </Typography>
+                        </Box>
+                        <Box flex={1} p={2} display="flex" alignItems="flex-start" justifyContent="center" sx={{ overflowY: 'auto', bgcolor: '#333' }}>
+                             <img src={scannedImage} alt="Original Bill" style={{ maxWidth: '100%', borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} />
+                        </Box>
+                        <Box p={2} borderTop="1px solid #eee">
+                             <Button 
+                                fullWidth 
+                                variant="outlined" 
+                                color="error" 
+                                startIcon={<RestartAltIcon />} 
+                                onClick={() => { setScannedItems([]); setScannedImage(null); }}
+                            >
+                                สแกนใหม่
+                            </Button>
+                        </Box>
+                    </Grid>
+                    
+                    {/* Right Panel: Form Data (Card List) */}
+                    <Grid item size={{ xs: 12, md: 8, lg: 9 }} sx={{ bgcolor: '#f4f6f8', height: '100%', overflowY: 'auto', p: 3 }}>
+                         {/* Header: Title + Add Category */}
+                         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
+                            <Typography variant="h6" color="text.primary" fontWeight="bold">
+                                รายการสินค้า ({scannedItems.length})
+                            </Typography>
+                             <Button 
+                                variant="contained" 
+                                color="secondary" 
+                                size="small" 
+                                startIcon={<AddCircleOutlineIcon />}
+                                onClick={() => setOpenCatModal(true)} // ✅ เปิด Modal หมวดหมู่
+                                sx={{ bgcolor: '#7b1fa2', borderRadius: 2 }}
+                             >
+                                 เพิ่มหมวดหมู่
+                             </Button>
+                         </Box>
+
+                         {/* Global Prefix Input */}
+                         <Paper sx={{ p: 2, mb: 3, borderRadius: 2 }} elevation={0}>
+                             <Typography variant="subtitle2" gutterBottom color="text.secondary">ตั้งค่ารหัสสินค้า (Global Setting)</Typography>
+                             <TextField 
+                                label="รหัสขึ้นต้น (Prefix)" 
+                                placeholder="เช่น IMP, BOX, 2024" 
+                                value={scannedPrefix}
+                                onChange={(e) => setScannedPrefix(e.target.value)}
+                                fullWidth 
+                                size="small"
+                                helperText="พิมพ์ Prefix แล้วกดปุ่มหมุน 🔄 ในแต่ละรายการเพื่อสุ่มรหัสใหม่พร้อม Prefix"
+                                InputProps={{
+                                    startAdornment: <InputAdornment position="start"><TagIcon fontSize="small" /></InputAdornment>
+                                }}
+                             />
+                         </Paper>
+
+                         <Stack spacing={2}>
+                            {scannedItems.map((item, index) => (
+                                <Card key={index} elevation={2} sx={{ borderRadius: 3, transition: '0.2s', '&:hover': { boxShadow: 4 } }}>
+                                    <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                                        <Grid container spacing={2} alignItems="center">
+                                            {/* Row 1: Main Info */}
+                                            <Grid item display="flex" alignItems="center" justifyContent="center" size={{ xs: 12, md: 1 }}>
+                                                 <Box 
+                                                    display="flex" alignItems="center" justifyContent="center" 
+                                                    bgcolor="#f3e5f5" color="#7b1fa2" 
+                                                    width={40} height={40} borderRadius="50%" fontWeight="bold"
+                                                 >
+                                                     {index + 1}
+                                                 </Box>
+                                            </Grid>
+
+                                            <Grid item size={{ xs: 12, md: 5 }}>
+                                                <TextField 
+                                                    label="ชื่อสินค้า"
+                                                    value={item.product_name}
+                                                    onChange={(e) => handleScannedItemChange(index, 'product_name', e.target.value)}
+                                                    fullWidth size="small" variant="outlined"
+                                                    InputProps={{ sx: { fontWeight: 'bold' } }}
+                                                />
+                                            </Grid>
+                                             <Grid item size={{ xs: 12, md: 3 }}>
+                                                <TextField 
+                                                    label="Barcode"
+                                                    value={item.barcode}
+                                                    onChange={(e) => handleScannedItemChange(index, 'barcode', e.target.value)}
+                                                    fullWidth size="small" variant="outlined"
+                                                    InputProps={{ 
+                                                        startAdornment: <InputAdornment position="start"><QrCodeIcon fontSize="small" /></InputAdornment>,
+                                                        // ✅ ปุ่ม Random Barcode ในแต่ละรายการ
+                                                        endAdornment: (
+                                                            <InputAdornment position="end">
+                                                                <Tooltip title="สุ่มรหัสใหม่ (รวม Prefix)">
+                                                                    <IconButton size="small" onClick={() => handleGenerateBarcodeForScannedItem(index)}>
+                                                                        <AutorenewIcon fontSize="small" color="primary" />
+                                                                    </IconButton>
+                                                                </Tooltip>
+                                                            </InputAdornment>
+                                                        )
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item size={{ xs: 12, md: 3 }}>
+                                                <FormControl fullWidth size="small">
+                                                    <InputLabel>หมวดหมู่</InputLabel>
+                                                    <Select
+                                                        value={item.Categories_category_id}
+                                                        label="หมวดหมู่"
+                                                        onChange={(e) => handleScannedItemChange(index, 'Categories_category_id', e.target.value)}
+                                                    >
+                                                        {categories.map((cat) => (
+                                                            <MenuItem key={cat.id} value={cat.id}>{cat.category_name}</MenuItem>
+                                                        ))}
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
+
+                                            {/* Row 2: Details */}
+                                             <Grid item size={{ xs: 12, md: 1 }}></Grid> {/* Spacer */}
+                                             <Grid item size={{ xs: 6, md: 2 }}>
+                                                <TextField 
+                                                    label="ทุน"
+                                                    type="number"
+                                                    value={item.cost_price}
+                                                    onChange={(e) => handleScannedItemChange(index, 'cost_price', e.target.value)}
+                                                    fullWidth size="small" variant="outlined"
+                                                    InputProps={{ startAdornment: <InputAdornment position="start">฿</InputAdornment> }}
+                                                />
+                                            </Grid>
+                                            <Grid item size={{ xs: 6, md: 2 }}>
+                                                <TextField 
+                                                    label="ราคาขาย"
+                                                    type="number"
+                                                    value={item.selling_price}
+                                                    onChange={(e) => handleScannedItemChange(index, 'selling_price', e.target.value)}
+                                                    fullWidth size="small" variant="outlined"
+                                                    InputProps={{ startAdornment: <InputAdornment position="start">฿</InputAdornment> }}
+                                                />
+                                            </Grid>
+                                            <Grid item size={{ xs: 6, md: 2 }}>
+                                                <TextField 
+                                                    label="จำนวน"
+                                                    type="number"
+                                                    value={item.stock_quantity}
+                                                    onChange={(e) => handleScannedItemChange(index, 'stock_quantity', e.target.value)}
+                                                    fullWidth size="small" variant="outlined"
+                                                />
+                                            </Grid>
+                                            <Grid item size={{ xs: 6, md: 2 }}>
+                                                 <TextField 
+                                                    label="ตำแหน่งเก็บ"
+                                                    value={item.location}
+                                                    onChange={(e) => handleScannedItemChange(index, 'location', e.target.value)}
+                                                    fullWidth size="small" variant="outlined"
+                                                    InputProps={{ startAdornment: <InputAdornment position="start"><LocationOnIcon fontSize="small" color="disabled" /></InputAdornment> }}
+                                                />
+                                            </Grid>
+                                            <Grid item size={{ xs: 12, md: 1 }} display="flex" justifyContent="flex-end">
+                                                <Tooltip title="ลบรายการนี้">
+                                                    <IconButton color="error" onClick={() => handleRemoveScannedItem(index)}>
+                                                        <DeleteOutlineIcon />
+                                                    </IconButton>
+                                                </Tooltip>
+                                            </Grid>
+                                        </Grid>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                         </Stack>
+                    </Grid>
+                </Grid>
+            )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, bgcolor: 'white', borderTop: '1px solid #eee' }}>
+            <Button onClick={() => setOpenScanDialog(false)} sx={{ color: 'text.secondary', px: 3 }}>ยกเลิก</Button>
+            {scannedItems.length > 0 && (
+                <Button 
+                    variant="contained" 
+                    color="secondary" 
+                    size="large"
+                    startIcon={<SaveAsIcon />}
+                    onClick={handleSaveScannedItems}
+                    sx={{ px: 4, bgcolor: '#9c27b0', borderRadius: 2, '&:hover': { bgcolor: '#7b1fa2' } }}
+                >
+                    ยืนยันและนำเข้าระบบ ({scannedItems.length})
+                </Button>
+            )}
+        </DialogActions>
+      </Dialog>
+
+      {/* --- DIALOG: STOCK HISTORY --- */}
       <Dialog
         open={openHistoryDialog}
         onClose={() => setOpenHistoryDialog(false)}
@@ -1102,7 +1455,6 @@ const Product = () => {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
       >
-        {/* Header ส่วนหัว */}
         <Box sx={{ bgcolor: 'success.main', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box display="flex" alignItems="center" gap={2}>
                 <Avatar sx={{ bgcolor: 'white', color: 'success.main' }}><HistoryIcon /></Avatar>
@@ -1116,7 +1468,6 @@ const Product = () => {
             </IconButton>
         </Box>
 
-        {/* Filter Bar: Date & Status & Reset Button */}
         <Box sx={{ p: 2, bgcolor: '#f8f9fa', borderBottom: '1px solid #eee' }}>
             <Grid container spacing={2} alignItems="center">
                 <Grid item xs={12} sm={5}>
@@ -1150,7 +1501,6 @@ const Product = () => {
                         </Select>
                     </FormControl>
                 </Grid>
-                {/* ✅ ปุ่มล้างการค้นหา */}
                 <Grid item xs={12} sm={2}>
                     <Button 
                         variant="outlined" 
@@ -1166,7 +1516,6 @@ const Product = () => {
             </Grid>
         </Box>
 
-        {/* Content ตาราง DataTable Style */}
         <DialogContent sx={{ p: 0 }}>
           {historyLoading ? (
               <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" height={300}>
@@ -1213,7 +1562,6 @@ const Product = () => {
                         const isPriceChange = log.transaction_type === "price_change";
                         const isEditInfo = log.transaction_type === "edit_info";
 
-                        // Logic การเลือกสีและไอคอน
                         let chipColor = "default";
                         let chipLabel = log.transaction_type;
                         let ChipIcon = null;
@@ -1228,7 +1576,7 @@ const Product = () => {
                           ChipIcon = <TrendingDownIcon fontSize="small" />;
                           chipLabel = "ตัดสต็อก";
                         } else if (isPriceChange) {
-                          chipColor = "warning"; // สีส้ม
+                          chipColor = "warning"; 
                           ChipIcon = <CurrencyExchangeIcon fontSize="small" />;
                           chipLabel = "ปรับราคา";
                         } else if (isEditInfo) {
@@ -1265,7 +1613,6 @@ const Product = () => {
                             </TableCell>
                             <TableCell align="right" sx={{ fontSize: "0.8rem", color: "#666" }}>
                               <Box display="flex" flexDirection="column" alignItems="flex-end">
-                                {/* Highlight ราคาถ้าเป็นการปรับราคา */}
                                 <span style={{ color: isPriceChange ? '#ed6c02' : 'inherit', fontWeight: isPriceChange ? 'bold' : 'normal' }}>
                                     ฿{Number(log.cost_price).toLocaleString()}
                                 </span> 
@@ -1306,7 +1653,7 @@ const Product = () => {
         </DialogContent>
       </Dialog>
 
-      {/* --- DIALOG: PRINT BARCODE (Updated Style) --- */}
+      {/* --- DIALOG: PRINT BARCODE --- */}
       <Dialog
         open={openBarcodeDialog}
         onClose={() => setOpenBarcodeDialog(false)}
@@ -1412,7 +1759,7 @@ const Product = () => {
         </DialogActions>
       </Dialog>
 
-      {/* --- MODAL ADD/EDIT PRODUCT (Updated Style) --- */}
+      {/* --- MODAL ADD/EDIT PRODUCT --- */}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
@@ -1458,9 +1805,7 @@ const Product = () => {
                 <QrCodeIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} /> ข้อมูลสินค้า
               </Typography>
               
-              {/* ✅ จัดเรียง Layout: [รหัสขึ้นต้น] [Barcode] [ชื่อสินค้า] อยู่แถวเดียวกัน */}
               <Box display="flex" gap={2} sx={{ flexDirection: { xs: "column", md: "row" } }}>
-                {/* 1. Prefix */}
                 <Box sx={{ flex: { md: 0.25 } }}>
                     <TextField
                         label="รหัสขึ้นต้น"
@@ -1477,7 +1822,6 @@ const Product = () => {
                         }}
                     />
                 </Box>
-                {/* 2. Barcode + Generate Button */}
                 <Box sx={{ flex: { md: 0.4 } }}>
                   <TextField
                     label="Barcode / รหัสสินค้า"
@@ -1507,7 +1851,6 @@ const Product = () => {
                     }}
                   />
                 </Box>
-                {/* 3. Product Name */}
                 <Box sx={{ flex: { md: 0.6 } }}>
                     <TextField
                         label="ชื่อสินค้า"
@@ -1703,7 +2046,7 @@ const Product = () => {
         </DialogActions>
       </Dialog>
 
-      {/* --- MODAL ADD CATEGORY (Updated Style) --- */}
+      {/* --- MODAL ADD CATEGORY --- */}
       <Dialog open={openCatModal} onClose={() => setOpenCatModal(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
         <Box sx={{ bgcolor: 'secondary.main', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box display="flex" alignItems="center" gap={2}>
