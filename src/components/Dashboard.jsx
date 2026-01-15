@@ -656,11 +656,11 @@ const Dashboard = () => {
                                         </ListItemAvatar>
                                         <ListItemText
                                             primary={<Typography variant="subtitle2" fontWeight="bold" noWrap>{item.product_name}</Typography>}
-                                            secondary={<Typography variant="caption" color="text.secondary">คงเหลือ: {item.stock_quantity}</Typography>}
+                                            secondary={<Typography variant="caption" color="text.secondary">#{item.barcode}</Typography>}
                                         />
                                         <Box textAlign="right">
                                             <Chip
-                                                label={item.stock_quantity === 0 ? "หมด" : "ต่ำ"}
+                                                label={item.stock_quantity === 0 ? "หมด" : item.stock_quantity }
                                                 size="small"
                                                 sx={{
                                                     bgcolor: item.stock_quantity === 0 ? alpha(theme.palette.error.main, 0.1) : alpha(theme.palette.warning.main, 0.1),
@@ -691,7 +691,7 @@ const Dashboard = () => {
                                     <ListItem alignItems="center" sx={{ py: 1.5 }}>
                                         <ListItemAvatar><Avatar variant="rounded" src={product.image} sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: theme.palette.primary.main, width: 36, height: 36 }}><Inventory2Icon fontSize="small" /></Avatar></ListItemAvatar>
                                         <ListItemText primary={<Typography variant="subtitle2" fontWeight="bold" noWrap>{product.name}</Typography>} secondary={<Typography variant="caption" color="text.secondary">เหลือ {product.stock}</Typography>} />
-                                        <Box textAlign="right"><Typography variant="subtitle2" fontWeight="800" color="success.main">{product.sold}</Typography></Box>
+                                        <Box textAlign="right"><Typography variant="subtitle2" fontWeight="800" color="success.main">ขายแล้ว {product.sold}</Typography></Box>
                                     </ListItem>
                                     {index < topProducts.length - 1 && <Divider variant="inset" component="li" />}
                                 </React.Fragment>
