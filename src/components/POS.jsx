@@ -168,6 +168,20 @@ const POS = () => {
     });
   };
 
+  // ✅ ADDED: Logic สำหรับสแกน Barcode (เมื่อกด Enter ในช่องค้นหา)
+  const handleScanBarcode = (e) => {
+    if (e.key === "Enter" && searchTerm.trim() !== "") {
+        // ค้นหาสินค้าที่ Barcode ตรงกับคำค้นหาเป๊ะๆ
+        const scannedProduct = products.find((p) => p.barcode === searchTerm.trim());
+        
+        if (scannedProduct) {
+            handleAddToCart(scannedProduct);
+            setSearchTerm(""); // เคลียร์ช่องค้นหาเพื่อรอสแกนชิ้นต่อไป
+            e.preventDefault(); // ป้องกันการ reload หรือ submit form
+        }
+    }
+  };
+
   const handleUpdateQty = (id, delta) => {
     setCart((prev) =>
       prev
@@ -357,19 +371,21 @@ const POS = () => {
 
   return (
     <Box sx={{ height: "calc(100vh - 120px)", display: "flex", gap: 3, overflow: "hidden" }}>
-      {/* ... [LEFT: CATALOG & RIGHT: CART - ส่วนเดิมทั้งหมด] ... */}
-      {/* (เพื่อความกระชับ ผมละส่วนนี้ไว้ ถ้าคุณก๊อปปี้ไปทับ โค้ดเดิมจะถูกแทนที่ถูกต้องครับ) */}
+      {/* LEFT: CATALOG */}
       <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
           <Box>
-            <Typography variant="h4" fontWeight="800" color="#1a472a">หน้าขายสินค้า</Typography>
-            <Typography variant="body2" color="text.secondary">{filteredProducts.length} รายการ</Typography>
+            <Typography variant="h4" fontWeight="800" >หน้าขายสินค้า</Typography>
+            <Typography variant="body2" color="text.secondary">สินค้าที่แสดง {filteredProducts.length} รายการ</Typography>
           </Box>
           <TextField
             placeholder="ค้นหาชื่อสินค้า..."
             size="small"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            // ✅ ADDED: เพิ่ม onKeyDown และ autoFocus
+            onKeyDown={handleScanBarcode}
+            autoFocus
             InputProps={{
               startAdornment: (<InputAdornment position="start"><SearchIcon sx={{ color: "#1a472a" }} /></InputAdornment>),
             }}

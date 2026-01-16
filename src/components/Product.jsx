@@ -99,9 +99,9 @@ import LocationOnIcon from '@mui/icons-material/LocationOn';
 
 import { visuallyHidden } from "@mui/utils";
 
-// ================= API CONFIG =================
-// ⚠️ API Key ของคุณ
-const API_KEY = "AIzaSyDECybHlJ6xqmenjH8wipQNceto-QCnDE0"; 
+// ================= API CONFIG (แก้ไขแล้ว ✅) =================
+// ดึง Key จากไฟล์ .env อย่างปลอดภัย
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 // ================= SORTING HELPERS =================
 function descendingComparator(a, b, orderBy) {
@@ -206,8 +206,6 @@ const Product = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [scannedItems, setScannedItems] = useState([]);
   const [scannedImage, setScannedImage] = useState(null);
-  
-  // ✅ NEW: Prefix for AI Scan
   const [scannedPrefix, setScannedPrefix] = useState("");
 
   const refProductTable = collection(db, "Products");
@@ -337,13 +335,8 @@ const Product = () => {
   };
 
   const handleGenerateBarcode = () => {
-    let isUnique = false;
-    let randomCode = "";
-    while (!isUnique) {
-      randomCode = Math.floor(10000000 + Math.random() * 90000000).toString();
-      isUnique = true; 
-    }
-    setForm({ ...form, barcode: randomCode });
+    let randomCode = Math.floor(10000000 + Math.random() * 90000000).toString();
+    setForm({ ...form, barcode: (genPrefix || "") + randomCode });
   };
 
   const handleOpenAdd = () => {
@@ -375,11 +368,9 @@ const Product = () => {
     }
 
     const currentQty = parseInt(form.stock_quantity);
-    const finalBarcode = (genPrefix || "").trim() + form.barcode.trim();
-
+    
     const payload = {
       ...form,
-      barcode: finalBarcode,
       cost_price: parseFloat(form.cost_price),
       selling_price: parseFloat(form.selling_price),
       stock_quantity: currentQty,
@@ -596,8 +587,8 @@ const Product = () => {
 
   const analyzeBillImage = async (file) => {
     try {
-        if (!API_KEY || API_KEY.startsWith("วาง_KEY")) {
-            throw new Error("กรุณาใส่ API KEY ก่อนใช้งาน");
+        if (!API_KEY) {
+            throw new Error("ไม่พบ API Key กรุณาตรวจสอบไฟล์ .env");
         }
 
         const genAI = new GoogleGenerativeAI(API_KEY);
@@ -1319,7 +1310,7 @@ const Product = () => {
                                     <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                                         <Grid container spacing={2} alignItems="center">
                                             {/* Row 1: Main Info */}
-                                            <Grid item display="flex" alignItems="center" justifyContent="center" size={{ xs: 12, md: 1 }}>
+                                            <Grid item xs={12} md={1}>
                                                  <Box 
                                                     display="flex" alignItems="center" justifyContent="center" 
                                                     bgcolor="#f3e5f5" color="#7b1fa2" 
@@ -1330,7 +1321,7 @@ const Product = () => {
                                             </Grid>
 
                                             <Grid item size={{ xs: 12, md: 5 }}>
-                                                <TextField 
+                                                <TextField
                                                     label="ชื่อสินค้า"
                                                     value={item.product_name}
                                                     onChange={(e) => handleScannedItemChange(index, 'product_name', e.target.value)}
@@ -1339,7 +1330,7 @@ const Product = () => {
                                                 />
                                             </Grid>
                                              <Grid item size={{ xs: 12, md: 3 }}>
-                                                <TextField 
+                                                <TextField
                                                     label="Barcode"
                                                     value={item.barcode}
                                                     onChange={(e) => handleScannedItemChange(index, 'barcode', e.target.value)}

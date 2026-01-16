@@ -7,18 +7,18 @@ import { collection, getDocs, query, orderBy, deleteDoc, doc, updateDoc } from "
 import Swal from "sweetalert2";
 import dayjs from 'dayjs';
 import 'dayjs/locale/th';
-import buddhistEra from "dayjs/plugin/buddhistEra"; // ✅ เพิ่ม Plugin ปี พ.ศ.
+import buddhistEra from "dayjs/plugin/buddhistEra";
 
 // --- Config Date ---
 dayjs.extend(buddhistEra);
-dayjs.locale('th'); // ✅ ตั้งค่าภาษาไทย
+dayjs.locale('th');
 
 // --- MUI Imports ---
 import {
   Box, Container, Typography, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Paper, IconButton, Chip, Stack, TextField,
-  InputAdornment, TablePagination, Dialog, DialogTitle, DialogContent,
-  DialogActions, Button, Grid, Divider, FormControl, InputLabel, Select, MenuItem,
+  InputAdornment, TablePagination, Dialog, DialogContent,
+  DialogActions, Button, Grid, FormControl, InputLabel, Select, MenuItem,
   Card, Avatar, Tooltip, CircularProgress, alpha, useTheme
 } from "@mui/material";
 
@@ -33,6 +33,11 @@ import CloseIcon from "@mui/icons-material/Close";
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import HistoryIcon from "@mui/icons-material/History"; // ใช้ไอคอนนี้สำหรับ Header
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import FilterAltIcon from "@mui/icons-material/FilterAlt";
+
+import { visuallyHidden } from "@mui/utils"; // เผื่อใช้ sorting ในอนาคต
 
 const History = () => {
   const theme = useTheme();
@@ -41,6 +46,7 @@ const History = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all"); // เพิ่ม Filter Status
   
   // Pagination
   const [page, setPage] = useState(0);
@@ -77,13 +83,18 @@ const History = () => {
 
   // --- Handlers ---
 
-  // 1. Search Filter
+  // 1. Search & Filter
   const filteredOrders = orders.filter((order) => {
     const term = searchTerm.toLowerCase();
     const orderNo = (order.order_number || "").toLowerCase();
-    const status = (order.status || "").toLowerCase();
-    const payment = (order.payment_method || "").toLowerCase();
-    return orderNo.includes(term) || status.includes(term) || payment.includes(term);
+    
+    // Filter by Search Term
+    const matchesSearch = orderNo.includes(term);
+
+    // Filter by Status Dropdown
+    const matchesStatus = filterStatus === "all" || order.status === filterStatus;
+
+    return matchesSearch && matchesStatus;
   });
 
   // 2. Pagination
@@ -161,255 +172,279 @@ const History = () => {
     });
   };
 
-  // ✅ Helper: Status Render (สีเหมือน Dashboard)
+  const handleResetFilter = () => {
+    setSearchTerm("");
+    setFilterStatus("all");
+  };
+
+  // ✅ Helper: Status Render (ปรับสไตล์ Chip)
   const renderStatus = (status) => {
     switch (status) {
       case 'completed': 
-        return (
-          <Chip 
-            icon={<CheckCircleOutlineIcon sx={{ fontSize: '18px !important', color: theme.palette.success.dark }} />} 
-            label="สำเร็จ" 
-            size="small" 
-            sx={{ 
-              bgcolor: alpha(theme.palette.success.main, 0.16), 
-              color: theme.palette.success.dark, 
-              fontWeight: 'bold',
-              borderRadius: '8px',
-              border: '1px solid transparent'
-            }} 
-          />
-        );
+        return <Chip icon={<CheckCircleOutlineIcon />} label="สำเร็จ" color="success" size="small" variant="outlined" sx={{ fontWeight: 'bold' }} />;
       case 'pending': 
-        return (
-          <Chip 
-            icon={<HourglassEmptyIcon sx={{ fontSize: '18px !important', color: theme.palette.warning.dark }} />} 
-            label="รอชำระ" 
-            size="small" 
-            sx={{ 
-              bgcolor: alpha(theme.palette.warning.main, 0.16), 
-              color: theme.palette.warning.dark, 
-              fontWeight: 'bold',
-              borderRadius: '8px',
-              border: '1px solid transparent'
-            }} 
-          />
-        );
+        return <Chip icon={<HourglassEmptyIcon />} label="รอชำระ" color="warning" size="small" variant="outlined" sx={{ fontWeight: 'bold' }} />;
       case 'cancelled': 
-        return (
-          <Chip 
-            icon={<CancelOutlinedIcon sx={{ fontSize: '18px !important', color: theme.palette.error.dark }} />} 
-            label="ยกเลิก" 
-            size="small" 
-            sx={{ 
-              bgcolor: alpha(theme.palette.error.main, 0.16), 
-              color: theme.palette.error.dark, 
-              fontWeight: 'bold',
-              borderRadius: '8px',
-              border: '1px solid transparent'
-            }} 
-          />
-        );
+        return <Chip icon={<CancelOutlinedIcon />} label="ยกเลิก" color="error" size="small" variant="outlined" sx={{ fontWeight: 'bold' }} />;
       default: 
         return <Chip label={status} size="small" />;
     }
   };
 
-  if (loading) return <Box height="100vh" display="flex" alignItems="center" justifyContent="center"><CircularProgress /></Box>;
+  if (loading) {
+    return (
+        <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" height="100vh" bgcolor="#f5f5f5">
+            <CircularProgress size={60} color="primary" />
+            <Typography variant="h6" color="textSecondary" mt={3} fontWeight="bold">กำลังโหลดประวัติการขาย...</Typography>
+        </Box>
+    );
+  }
 
   return (
-    <Box sx={{ minHeight: '100vh', pb: 6 }}>
-      <Container maxWidth={false} sx={{ pt: 4, px: { xs: 2, md: 4 } }}>
-        
-        {/* --- Header Section --- */}
-        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems="center" mb={4} spacing={2}>
-            <Box>
-                <Typography variant="h4" fontWeight="800" sx={{ color: '#1a1a1a', letterSpacing: '-0.5px' }}>ประวัติการขาย</Typography>
-                <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>ตรวจสอบและจัดการรายการคำสั่งซื้อย้อนหลัง</Typography>
-            </Box>
-            
-            <TextField
-                size="small"
-                placeholder="ค้นหาเลขบิล, สถานะ..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                    startAdornment: (<InputAdornment position="start"><SearchIcon color="action" /></InputAdornment>),
-                    sx: { bgcolor: 'white', borderRadius: 2, minWidth: 300, boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }
-                }}
-            />
-        </Stack>
+    <Container maxWidth="lg" sx={{ mt: 5, mb: 5, fontFamily: "Sarabun, sans-serif" }}>
+      <style>{` .swal2-container { z-index: 20000 !important; } `}</style>
 
-        {/* --- Data Table Card --- */}
-        <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
-          <TableContainer>
-            <Table>
-              <TableHead sx={{ bgcolor: '#F9FAFB' }}>
-                <TableRow>
-                  <TableCell sx={{ pl: 3, py: 2, fontWeight: 700, color: 'text.secondary' }}>วันที่/เวลา</TableCell>
-                  <TableCell sx={{ py: 2, fontWeight: 700, color: 'text.secondary' }}>เลขที่บิล</TableCell>
-                  <TableCell sx={{ py: 2, fontWeight: 700, color: 'text.secondary' }}>ยอดสุทธิ</TableCell>
-                  <TableCell sx={{ py: 2, fontWeight: 700, color: 'text.secondary' }}>ชำระโดย</TableCell>
-                  <TableCell sx={{ py: 2, fontWeight: 700, color: 'text.secondary' }}>สถานะ</TableCell>
-                  <TableCell align="center" sx={{ pr: 3, py: 2, fontWeight: 700, color: 'text.secondary' }}>จัดการ</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredOrders.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((order) => (
-                  <TableRow key={order.id} hover sx={{ '& td': { borderBottom: '1px solid #F2F4F7' } }}>
-                    {/* ✅ วันที่แบบไทย: 13 ม.ค. 2569 15:30 */}
-                    <TableCell sx={{ pl: 3 }}>
-                        <Typography variant="body2" fontWeight="500">
-                            {order.transaction_date?.seconds 
-                                ? dayjs(order.transaction_date.seconds * 1000).format('D MMM BBBB HH:mm') 
-                                : '-'}
-                        </Typography>
-                    </TableCell>
-                    <TableCell>
-                        <Typography variant="subtitle2" fontFamily="monospace" fontWeight="700" color="primary.main">
-                            {order.order_number}
-                        </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="subtitle2" fontWeight="800" sx={{ color: '#00AB55' }}>
-                        ฿{Number(order.grand_total).toLocaleString()}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip 
-                        label={order.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'} 
-                        size="small" 
-                        sx={{ borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.1), color: theme.palette.primary.main, fontWeight: 'bold' }} 
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {renderStatus(order.status)}
-                    </TableCell>
-                    <TableCell align="center" sx={{ pr: 3 }}>
-                        <Stack direction="row" spacing={1} justifyContent="center">
-                            <Tooltip title="ดูรายละเอียด">
-                                <IconButton size="small" onClick={() => handleView(order)} sx={{ color: theme.palette.info.main, bgcolor: alpha(theme.palette.info.main, 0.1), '&:hover': { bgcolor: alpha(theme.palette.info.main, 0.2) } }}>
-                                    <VisibilityIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                            <Tooltip title="แก้ไข">
-                                <IconButton size="small" onClick={() => handleEdit(order)} sx={{ color: theme.palette.warning.main, bgcolor: alpha(theme.palette.warning.main, 0.1), '&:hover': { bgcolor: alpha(theme.palette.warning.main, 0.2) } }}>
-                                    <EditOutlinedIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                            <Tooltip title="ลบรายการ">
-                                <IconButton size="small" onClick={() => handleDeleteClick(order)} sx={{ color: theme.palette.error.main, bgcolor: alpha(theme.palette.error.main, 0.1), '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.2) } }}>
-                                    <DeleteOutlineIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {filteredOrders.length === 0 && (
-                  <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}><Typography color="text.secondary">ไม่พบประวัติการขาย</Typography></TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          <TablePagination
-            rowsPerPageOptions={[10, 25, 50]}
-            component="div"
-            count={filteredOrders.length}
-            rowsPerPage={rowsPerPage}
-            page={page}
-            onPageChange={handleChangePage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            labelRowsPerPage="แสดงแถว:"
+      {/* --- HEADER --- */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexDirection={{ xs: "column", md: "row" }} gap={2}>
+        <Box>
+          <Typography variant="h4" component="h1" fontWeight="bold">
+            <HistoryIcon sx={{ fontSize: 35, verticalAlign: "middle", mr: 1 }} />
+            จัดการประวัติการขาย
+          </Typography>
+          <Typography variant="body1" color="text.secondary" mt={0.5}>
+            รายการคำสั่งซื้อทั้งหมด ({orders.length} รายการ)
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* --- FILTER SECTION (เหมือนหน้า Product) --- */}
+      <Paper elevation={0} sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: "white", border: "1px solid #e0e0e0" }}>
+        <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="center">
+          <TextField
+            placeholder="ค้นหาเลขบิล..."
+            variant="outlined"
+            size="small"
+            fullWidth
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            sx={{ flex: 2 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon color="action" />
+                </InputAdornment>
+              ),
+            }}
           />
-        </Card>
+          <FormControl size="small" sx={{ flex: 1, minWidth: 200 }} fullWidth>
+            <InputLabel>
+              <FilterAltIcon sx={{ fontSize: 16, verticalAlign: "text-top", mr: 0.5 }} />
+              สถานะ
+            </InputLabel>
+            <Select
+              value={filterStatus}
+              label="สถานะ"
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <MenuItem value="all">ทั้งหมด</MenuItem>
+              <MenuItem value="completed">✅ สำเร็จ</MenuItem>
+              <MenuItem value="pending">⚠️ รอชำระ</MenuItem>
+              <MenuItem value="cancelled">❌ ยกเลิก</MenuItem>
+            </Select>
+          </FormControl>
+          
+          {(searchTerm || filterStatus !== "all") && (
+            <Button variant="outlined" color="inherit" startIcon={<RestartAltIcon />} onClick={handleResetFilter} sx={{ borderColor: "#ddd", color: "#666", whiteSpace: "nowrap" }}>
+              ล้างตัวกรอง
+            </Button>
+          )}
+        </Stack>
+      </Paper>
 
-        {/* --- 1. View Details Dialog --- */}
-        <Dialog open={viewOpen} onClose={() => setViewOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
-          <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0' }}>
-             <Stack direction="row" alignItems="center" spacing={1}>
-                <Avatar sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: theme.palette.primary.main }}><ReceiptLongIcon /></Avatar>
-                <Typography variant="h6" fontWeight="bold">รายละเอียดคำสั่งซื้อ</Typography>
-             </Stack>
-             <IconButton onClick={() => setViewOpen(false)}><CloseIcon /></IconButton>
-          </Box>
-          <DialogContent sx={{ p: 3 }}>
-            {selectedOrder && (
-              <Stack spacing={2.5}>
-                <Box sx={{ p: 2, bgcolor: '#F9FAFB', borderRadius: 2, border: '1px solid #eee' }}>
-                    <Grid container spacing={2}>
-                        <Grid item xs={6}><Typography variant="caption" color="text.secondary">เลขที่บิล</Typography><Typography variant="subtitle2" fontWeight="bold">{selectedOrder.order_number}</Typography></Grid>
-                        {/* ✅ วันที่แบบไทยใน Dialog */}
-                        <Grid item xs={6}><Typography variant="caption" color="text.secondary">วันที่</Typography><Typography variant="subtitle2">{selectedOrder.transaction_date?.seconds ? dayjs(selectedOrder.transaction_date.seconds * 1000).format('D MMMM BBBB HH:mm') : '-'}</Typography></Grid>
-                        <Grid item xs={6}><Typography variant="caption" color="text.secondary">สถานะ</Typography><Box mt={0.5}>{renderStatus(selectedOrder.status)}</Box></Grid>
-                        <Grid item xs={6}><Typography variant="caption" color="text.secondary">ชำระโดย</Typography><Typography variant="subtitle2">{selectedOrder.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'}</Typography></Grid>
-                    </Grid>
-                </Box>
-                
-                <Box>
-                    <Typography variant="subtitle2" fontWeight="bold" mb={1}>รายการสินค้า ({selectedOrder.items?.length || 0})</Typography>
-                    <Box sx={{ maxHeight: 250, overflowY: 'auto', border: '1px solid #eee', borderRadius: 2 }}>
-                        <Table size="small">
-                            <TableHead sx={{ bgcolor: '#f5f5f5' }}><TableRow><TableCell>สินค้า</TableCell><TableCell align="right">ราคา</TableCell><TableCell align="right">รวม</TableCell></TableRow></TableHead>
-                            <TableBody>
-                                {selectedOrder.items?.map((item, idx) => (
-                                    <TableRow key={idx}>
-                                        <TableCell>
-                                            <Typography variant="body2" fontWeight="600">{item.product_name || item.name}</Typography>
-                                            <Typography variant="caption" color="text.secondary">x{item.qty || item.quantity}</Typography>
-                                        </TableCell>
-                                        <TableCell align="right">{Number(item.selling_price || item.price).toLocaleString()}</TableCell>
-                                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>{((item.qty || item.quantity) * (item.selling_price || item.price)).toLocaleString()}</TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </Box>
-                </Box>
-
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ pt: 2, borderTop: '2px dashed #eee' }}>
-                    <Typography variant="subtitle1" fontWeight="bold">ยอดรวมสุทธิ</Typography>
-                    <Typography variant="h5" fontWeight="800" color="primary">฿{Number(selectedOrder.grand_total).toLocaleString()}</Typography>
-                </Stack>
-              </Stack>
+      {/* --- TABLE --- */}
+      <TableContainer component={Paper} elevation={4} sx={{ borderRadius: 3, overflow: "hidden" }}>
+        <Table sx={{ minWidth: 700 }}>
+          {/* ✅ Table Head สีเขียวเหมือน Product */}
+          <TableHead sx={{ bgcolor: "#4caf50" }}>
+            <TableRow>
+              <TableCell sx={{ color: "white", fontWeight: "bold" }}>วันที่/เวลา</TableCell>
+              <TableCell sx={{ color: "white", fontWeight: "bold" }}>เลขที่บิล</TableCell>
+              <TableCell sx={{ color: "white", fontWeight: "bold" }}>ยอดสุทธิ</TableCell>
+              <TableCell sx={{ color: "white", fontWeight: "bold" }}>ชำระโดย</TableCell>
+              <TableCell sx={{ color: "white", fontWeight: "bold" }}>สถานะ</TableCell>
+              <TableCell align="center" sx={{ color: "white", fontWeight: "bold" }}>จัดการ</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filteredOrders.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((order) => (
+              <TableRow key={order.id} hover>
+                <TableCell>
+                    <Typography variant="body2" fontWeight="500">
+                        {order.transaction_date?.seconds 
+                            ? dayjs(order.transaction_date.seconds * 1000).format('D MMM BBBB HH:mm') 
+                            : '-'}
+                    </Typography>
+                </TableCell>
+                <TableCell>
+                    <Typography variant="body2" fontFamily="monospace" fontWeight="700" color="primary">
+                        {order.order_number}
+                    </Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2" fontWeight="bold" sx={{ color: '#2e7d32' }}>
+                    ฿{Number(order.grand_total).toLocaleString()}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Chip 
+                    label={order.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'} 
+                    size="small" 
+                    sx={{ bgcolor: "#e3f2fd", color: "#1565c0", fontWeight: 'bold' }} 
+                  />
+                </TableCell>
+                <TableCell>
+                  {renderStatus(order.status)}
+                </TableCell>
+                <TableCell align="center">
+                    <Stack direction="row" spacing={1} justifyContent="center">
+                        <Tooltip title="ดูรายละเอียด">
+                            <IconButton size="small" onClick={() => handleView(order)} sx={{ color: "#1976d2", bgcolor: "#e3f2fd", '&:hover': { bgcolor: "#bbdefb" } }}>
+                                <VisibilityIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="แก้ไข">
+                            <IconButton size="small" onClick={() => handleEdit(order)} sx={{ color: "#ed6c02", bgcolor: "#fff3e0", '&:hover': { bgcolor: "#ffe0b2" } }}>
+                                <EditOutlinedIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="ลบรายการ">
+                            <IconButton size="small" onClick={() => handleDeleteClick(order)} sx={{ color: "#ef5350", bgcolor: "#ffebee", '&:hover': { bgcolor: "#ffcdd2" } }}>
+                                <DeleteOutlineIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Stack>
+                </TableCell>
+              </TableRow>
+            ))}
+            {filteredOrders.length === 0 && (
+              <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}><Typography color="text.secondary">ไม่พบรายการคำสั่งซื้อ</Typography></TableCell></TableRow>
             )}
-          </DialogContent>
-        </Dialog>
+          </TableBody>
+        </Table>
+        
+        {/* Pagination Section */}
+        <Box sx={{ display: "flex", justifyContent: "flex-end", p: 2, borderTop: "1px solid #eee" }}>
+            <TablePagination
+                rowsPerPageOptions={[10, 25, 50]}
+                component="div"
+                count={filteredOrders.length}
+                rowsPerPage={rowsPerPage}
+                page={page}
+                onPageChange={handleChangePage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                labelRowsPerPage="แสดงแถว:"
+            />
+        </Box>
+      </TableContainer>
 
-        {/* --- 2. Edit Dialog --- */}
-        <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
-          <DialogTitle sx={{ fontWeight: 'bold' }}>แก้ไขคำสั่งซื้อ</DialogTitle>
-          <DialogContent sx={{ pt: 1 }}>
-            <Stack spacing={3} mt={1}>
-                <Typography variant="body2" color="text.secondary" sx={{ p: 1.5, bgcolor: '#fff4e5', color: '#663c00', borderRadius: 1 }}>
-                    กำลังแก้ไขบิลเลขที่: <b>{selectedOrder?.order_number}</b>
-                </Typography>
-                
-                <FormControl fullWidth size="small">
-                    <InputLabel>สถานะออเดอร์</InputLabel>
-                    <Select value={editStatus} label="สถานะออเดอร์" onChange={(e) => setEditStatus(e.target.value)}>
-                        <MenuItem value="completed"><Stack direction="row" alignItems="center" spacing={1}><CheckCircleOutlineIcon color="success" fontSize="small"/><span>สำเร็จ (Completed)</span></Stack></MenuItem>
-                        <MenuItem value="pending"><Stack direction="row" alignItems="center" spacing={1}><HourglassEmptyIcon color="warning" fontSize="small"/><span>รอชำระ (Pending)</span></Stack></MenuItem>
-                        <MenuItem value="cancelled"><Stack direction="row" alignItems="center" spacing={1}><CancelOutlinedIcon color="error" fontSize="small"/><span>ยกเลิก (Cancelled)</span></Stack></MenuItem>
-                    </Select>
-                </FormControl>
+      {/* --- 1. VIEW DIALOG (Professional Style) --- */}
+      <Dialog open={viewOpen} onClose={() => setViewOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+        <Box sx={{ bgcolor: '#0288d1', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+             <Box display="flex" alignItems="center" gap={2}>
+                <Avatar sx={{ bgcolor: 'white', color: '#0288d1' }}><ReceiptLongIcon /></Avatar>
+                <Box>
+                    <Typography variant="h6" fontWeight="bold">รายละเอียดคำสั่งซื้อ</Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.9 }}>{selectedOrder?.order_number}</Typography>
+                </Box>
+             </Box>
+             <IconButton onClick={() => setViewOpen(false)} sx={{ color: 'white' }}><CloseIcon /></IconButton>
+        </Box>
 
-                <FormControl fullWidth size="small">
-                    <InputLabel>วิธีการชำระเงิน</InputLabel>
-                    <Select value={editPayment} label="วิธีการชำระเงิน" onChange={(e) => setEditPayment(e.target.value)}>
-                        <MenuItem value="cash">เงินสด (Cash)</MenuItem>
-                        <MenuItem value="transfer">โอนเงิน (Transfer)</MenuItem>
-                    </Select>
-                </FormControl>
+        <DialogContent dividers sx={{ p: 3 }}>
+          {selectedOrder && (
+            <Stack spacing={3}>
+              <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 2, border: '1px solid #e0e0e0' }}>
+                  <Grid container spacing={2}>
+                      <Grid item xs={6}><Typography variant="caption" color="text.secondary">วันที่ทำรายการ</Typography><Typography variant="body2" fontWeight="bold">{selectedOrder.transaction_date?.seconds ? dayjs(selectedOrder.transaction_date.seconds * 1000).format('D MMMM BBBB HH:mm') : '-'}</Typography></Grid>
+                      <Grid item xs={6}><Typography variant="caption" color="text.secondary">สถานะ</Typography><Box>{renderStatus(selectedOrder.status)}</Box></Grid>
+                      <Grid item xs={6}><Typography variant="caption" color="text.secondary">วิธีชำระเงิน</Typography><Typography variant="body2">{selectedOrder.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'}</Typography></Grid>
+                  </Grid>
+              </Box>
+              
+              <Box>
+                  <Typography variant="subtitle2" fontWeight="bold" gutterBottom color="primary">รายการสินค้า ({selectedOrder.items?.length || 0})</Typography>
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                        <TableHead sx={{ bgcolor: '#eee' }}><TableRow><TableCell>สินค้า</TableCell><TableCell align="right">ราคา</TableCell><TableCell align="right">รวม</TableCell></TableRow></TableHead>
+                        <TableBody>
+                            {selectedOrder.items?.map((item, idx) => (
+                                <TableRow key={idx}>
+                                    <TableCell>
+                                        <Typography variant="body2" fontWeight="500">{item.product_name || item.name}</Typography>
+                                        <Typography variant="caption" color="text.secondary">x{item.qty || item.quantity}</Typography>
+                                    </TableCell>
+                                    <TableCell align="right">{Number(item.selling_price || item.price).toLocaleString()}</TableCell>
+                                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>{((item.qty || item.quantity) * (item.selling_price || item.price)).toLocaleString()}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                  </TableContainer>
+              </Box>
+
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ pt: 2, borderTop: '2px dashed #ccc' }}>
+                  <Typography variant="subtitle1" fontWeight="bold">ยอดรวมสุทธิ</Typography>
+                  <Typography variant="h5" fontWeight="bold" color="success.main">฿{Number(selectedOrder.grand_total).toLocaleString()}</Typography>
+              </Stack>
             </Stack>
-          </DialogContent>
-          <DialogActions sx={{ p: 2 }}>
-            <Button onClick={() => setEditOpen(false)} color="inherit" variant="outlined" sx={{ borderRadius: 2 }}>ยกเลิก</Button>
-            <Button onClick={handleSaveEdit} variant="contained" color="primary" startIcon={<SaveIcon />} sx={{ borderRadius: 2, boxShadow: 'none' }}>บันทึกการแก้ไข</Button>
-          </DialogActions>
-        </Dialog>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, bgcolor: '#f8f9fa' }}>
+            <Button onClick={() => setViewOpen(false)} sx={{ color: 'text.secondary' }}>ปิดหน้าต่าง</Button>
+            {/* Optional: Add Print Button here */}
+        </DialogActions>
+      </Dialog>
 
-      </Container>
-    </Box>
+      {/* --- 2. EDIT DIALOG (Professional Style) --- */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+         <Box sx={{ bgcolor: '#ed6c02', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+             <Box display="flex" alignItems="center" gap={2}>
+                <Avatar sx={{ bgcolor: 'white', color: '#ed6c02' }}><EditOutlinedIcon /></Avatar>
+                <Box>
+                    <Typography variant="h6" fontWeight="bold">แก้ไขคำสั่งซื้อ</Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.9 }}>{selectedOrder?.order_number}</Typography>
+                </Box>
+             </Box>
+             <IconButton onClick={() => setEditOpen(false)} sx={{ color: 'white' }}><CloseIcon /></IconButton>
+        </Box>
+
+        <DialogContent dividers sx={{ p: 4 }}>
+          <Stack spacing={3}>
+              <FormControl fullWidth>
+                  <InputLabel>สถานะออเดอร์</InputLabel>
+                  <Select value={editStatus} label="สถานะออเดอร์" onChange={(e) => setEditStatus(e.target.value)}>
+                      <MenuItem value="completed"><Stack direction="row" alignItems="center" spacing={1}><CheckCircleOutlineIcon color="success" fontSize="small"/><span>สำเร็จ (Completed)</span></Stack></MenuItem>
+                      <MenuItem value="pending"><Stack direction="row" alignItems="center" spacing={1}><HourglassEmptyIcon color="warning" fontSize="small"/><span>รอชำระ (Pending)</span></Stack></MenuItem>
+                      <MenuItem value="cancelled"><Stack direction="row" alignItems="center" spacing={1}><CancelOutlinedIcon color="error" fontSize="small"/><span>ยกเลิก (Cancelled)</span></Stack></MenuItem>
+                  </Select>
+              </FormControl>
+
+              <FormControl fullWidth>
+                  <InputLabel>วิธีการชำระเงิน</InputLabel>
+                  <Select value={editPayment} label="วิธีการชำระเงิน" onChange={(e) => setEditPayment(e.target.value)}>
+                      <MenuItem value="cash">เงินสด (Cash)</MenuItem>
+                      <MenuItem value="transfer">โอนเงิน (Transfer)</MenuItem>
+                  </Select>
+              </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, bgcolor: '#f8f9fa', borderTop: '1px solid #eee' }}>
+          <Button onClick={() => setEditOpen(false)} sx={{ color: 'text.secondary' }}>ยกเลิก</Button>
+          <Button onClick={handleSaveEdit} variant="contained" color="warning" startIcon={<SaveIcon />}>บันทึกการแก้ไข</Button>
+        </DialogActions>
+      </Dialog>
+
+    </Container>
   );
 };
 

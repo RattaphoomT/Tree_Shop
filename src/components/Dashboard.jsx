@@ -586,7 +586,7 @@ const Dashboard = () => {
                             {categoryData.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
-                                        <Pie data={categoryData} cx="50%" cy="45%" labelLine={false} label={renderCustomizedLabel} outerRadius={90} innerRadius={50} dataKey="value" paddingAngle={2}>
+                                        <Pie data={categoryData} cx="50%" cy="45%" labelLine={false} label={renderCustomizedLabel} outerRadius={110} innerRadius={50} dataKey="value" paddingAngle={2}>
                                             {categoryData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                                         </Pie>
                                         <Tooltip formatter={(value, name, props) => [`${value} ชิ้น`, `${name} (${props.payload.percent}%)`]} contentStyle={{ borderRadius: 12 }} />
