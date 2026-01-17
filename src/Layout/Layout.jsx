@@ -1,18 +1,22 @@
 import React from "react";
-import { Box, AppBar, Toolbar, IconButton, Typography } from "@mui/material";
+import { Box, AppBar, Toolbar, IconButton, Typography, useTheme, useMediaQuery } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
-import CloseIcon from "@mui/icons-material/Close";
 import Sidebar from "./Sidebar";
 
 export default function Layout({ children }) {
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const theme = useTheme();
+  // ตรวจสอบว่าเป็นมือถือหรือไม่ (breakpoint 'md' ลงไปถือเป็น mobile/tablet)
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
+  // ถ้าเป็นมือถือ เริ่มต้นให้ปิด (false), ถ้า Desktop เริ่มต้นให้เปิด (true)
+  const [sidebarOpen, setSidebarOpen] = React.useState(!isMobile);
 
   const handleToggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
   };
 
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box sx={{ display: "flex", flexDirection: "column" }}>
       <AppBar
         position="fixed"
         sx={{
@@ -28,7 +32,7 @@ export default function Layout({ children }) {
             onClick={handleToggleSidebar}
             sx={{ mr: 2 }}
           >
-            {sidebarOpen ? <MenuIcon /> : <MenuIcon />}
+            <MenuIcon />
           </IconButton>
           <Typography variant="h6" component="div" sx={{ fontWeight: 700 }}>
             ระบบจัดการร้านต้นไม้
@@ -36,9 +40,26 @@ export default function Layout({ children }) {
         </Toolbar>
       </AppBar>
       
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar 
+        open={sidebarOpen} 
+        onClose={() => setSidebarOpen(false)} 
+        isMobile={isMobile} // ส่งค่า isMobile ไปบอก Sidebar
+      />
       
-      <Box sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+      <Box 
+        component="main" 
+        sx={{ 
+          flexGrow: 1, 
+          p: 3, 
+          mt: 8, 
+          // ถ้าไม่ใช่ Mobile ให้เว้นที่ซ้ายสำหรับ Sidebar (แบบย่อหรือขยาย)
+          // แต่เนื่องจาก Logic Sidebar เดิมของคุณซับซ้อน เราให้ Box ขยับเองตาม Flow ปกติ
+          // หรือถ้าใช้ Permanent Drawer บน Desktop ต้องจัดการ Margin ตรงนี้
+          ml: isMobile ? 0 : (sidebarOpen ? "260px" : "80px"),
+          transition: "margin 0.5s ease",
+          width: isMobile ? "100%" : `calc(100% - ${sidebarOpen ? 260 : 80}px)`
+        }}
+      >
         {children}
       </Box>
     </Box>
