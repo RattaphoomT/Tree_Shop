@@ -34,7 +34,6 @@ export default function Sidebar({ open, onClose, isMobile }) {
     { to: "/pos", label: "POS", icon: <PointOfSaleIcon /> },
     { to: "/product", label: "สินค้า", icon: <Inventory2Icon /> },
     { to: "/history", label: "ประวัติการขาย", icon: <ShoppingCartIcon /> },
-    { to: "/customers", label: "ลูกค้า", icon: <PeopleIcon /> },
   ];
 
   // Logic การขยาย:

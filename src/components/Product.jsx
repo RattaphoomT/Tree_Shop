@@ -1,20 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-// --- Config Firebase ---
-import { db } from "../firebase/config";
-import {
-  collection,
-  onSnapshot,
-  addDoc,
-  deleteDoc,
-  updateDoc,
-  doc,
-  serverTimestamp,
-  query,
-  where,
-  orderBy as firestoreOrderBy,
-  getDocs,
-  writeBatch,
-} from "firebase/firestore";
 
 // --- SweetAlert2 Import ---
 import Swal from "sweetalert2";
@@ -66,6 +50,7 @@ import {
   Card,
   CardContent,
   useTheme,
+  Autocomplete, // ✅ เพิ่ม Import Autocomplete
 } from "@mui/material";
 
 // --- Icons Imports ---
@@ -208,37 +193,10 @@ const Product = () => {
   const [scannedImage, setScannedImage] = useState(null);
   const [scannedPrefix, setScannedPrefix] = useState("");
 
-  const refProductTable = collection(db, "Products");
-  const refCategoryTable = collection(db, "Categories");
-  const refTransactionTable = collection(db, "Stock_Transactions");
-
   // ================= USE EFFECT =================
   useEffect(() => {
     setLoading(true);
-    const unsubProd = onSnapshot(refProductTable, (snapshot) => {
-      const newData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setData(newData);
-      setLoading(false);
-    }, (error) => {
-        console.error("Error fetching products:", error);
-        setLoading(false);
-    });
-
-    const unsubCat = onSnapshot(refCategoryTable, (snapshot) => {
-      const newCats = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setCategories(newCats);
-    });
-
-    return () => {
-      unsubProd();
-      unsubCat();
-    };
+    fetchData();
   }, []);
 
   useEffect(() => {
@@ -246,6 +204,30 @@ const Product = () => {
   }, [searchTerm, filterStatus, filterCategory]);
 
   // ================= LOGIC: FILTER / SEARCH =================
+  const fetchData = async () => {
+    try {
+      // สมมติว่า Backend ของคุณมี API สำหรับดึงข้อมูลสินค้าและหมวดหมู่
+      const [productsResponse, categoriesResponse] = await Promise.all([
+        fetch("/api/products"), // Endpoint สำหรับดึงสินค้าทั้งหมด
+        fetch("/api/categories"), // Endpoint สำหรับดึงหมวดหมู่ทั้งหมด
+      ]);
+
+      if (!productsResponse.ok || !categoriesResponse.ok) {
+        throw new Error("Network response was not ok");
+      }
+
+      const productsData = await productsResponse.json();
+      const categoriesData = await categoriesResponse.json();
+
+      setData(productsData);
+      setCategories(categoriesData);
+    } catch (error) {
+      showSnackbar(`ไม่สามารถโหลดข้อมูลได้: ${error.message}`, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredData = data.filter((item) => {
     const term = searchTerm.toLowerCase();
     const pName = item.product_name ? item.product_name.toLowerCase() : "";
@@ -254,9 +236,8 @@ const Product = () => {
 
     const matchesSearch =
       pName.includes(term) || pBarcode.includes(term) || pLoc.includes(term);
-    const matchesCategory =
-      filterCategory === "all" ||
-      item.Categories_category_id === filterCategory;
+    const matchesCategory = // ปรับตาม schema ใหม่
+      filterCategory === "all" || item.category_id === filterCategory;
 
     let matchesStatus = true;
     const qty = parseInt(item.stock_quantity) || 0;
@@ -293,28 +274,6 @@ const Product = () => {
   ).slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   const countPages = Math.ceil(filteredData.length / rowsPerPage);
-
-  // ================= HELPER: RECORD FULL TRANSACTION =================
-  const recordTransaction = async (productData, type, qtyChange, prevStock, currentStock, note = "") => {
-    try {
-      await addDoc(refTransactionTable, {
-        product_id: productData.id || "",
-        barcode: productData.barcode || "",
-        product_name: productData.product_name || "",
-        cost_price: parseFloat(productData.cost_price) || 0,
-        selling_price: parseFloat(productData.selling_price) || 0,
-        location: productData.location || "",
-        transaction_type: type,
-        quantity_change: qtyChange,
-        previous_stock: prevStock,
-        current_stock: currentStock,
-        note: note,
-        transaction_date: serverTimestamp(),
-      });
-    } catch (err) {
-      console.error("Error recording transaction:", err);
-    }
-  };
 
   // ================= HANDLERS: CRUD =================
   const handleChang = (e) => {
@@ -367,36 +326,38 @@ const Product = () => {
       return;
     }
 
-    const currentQty = parseInt(form.stock_quantity);
-    
     const payload = {
       ...form,
       cost_price: parseFloat(form.cost_price),
       selling_price: parseFloat(form.selling_price),
-      stock_quantity: currentQty,
+      stock_quantity: parseInt(form.stock_quantity),
+      // แปลง category_id ให้เป็นตัวเลข ถ้าจำเป็น
+      category_id: form.Categories_category_id,
     };
 
     try {
+      let response;
       if (editId) {
-        const oldData = data.find((d) => d.id === editId);
-        const oldQty = oldData ? parseInt(oldData.stock_quantity) : 0;
-
-        await updateDoc(doc(db, "Products", editId), payload);
-
-        const isStockChanged = oldQty !== currentQty;
-        if (isStockChanged) {
-          const diff = currentQty - oldQty;
-          const type = diff > 0 ? "stock_in_edit" : "stock_out_edit";
-          await recordTransaction({ id: editId, ...payload }, type, diff, oldQty, currentQty, "แก้ไขจำนวนสต็อก");
-        } else {
-             await recordTransaction({ id: editId, ...payload }, "edit_info", 0, oldQty, currentQty, "แก้ไขข้อมูลสินค้า");
-        }
+        // --- UPDATE (PUT request) ---
+        response = await fetch(`/api/products/${editId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         showSnackbar("อัปเดตข้อมูลเรียบร้อยแล้ว", "success");
       } else {
-        const docRef = await addDoc(refProductTable, { ...payload, created_at: serverTimestamp() });
-        await recordTransaction({ id: docRef.id, ...payload }, "new_product", currentQty, 0, currentQty, "เพิ่มสินค้าใหม่เข้าระบบ");
+        // --- CREATE (POST request) ---
+        response = await fetch("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         showSnackbar("เพิ่มสินค้าใหม่เรียบร้อยแล้ว", "success");
       }
+
+      if (!response.ok) throw new Error("Server error");
+
+      await fetchData(); // โหลดข้อมูลใหม่หลังจากการบันทึก
       setForm(initialFormState);
       setOpen(false);
       setEditId(null);
@@ -420,12 +381,15 @@ const Product = () => {
       if (result.isConfirmed) {
         setLoading(true);
         try {
-          const q = query(refTransactionTable, where("product_id", "==", id));
-          const querySnapshot = await getDocs(q);
-          const batch = writeBatch(db);
-          querySnapshot.forEach((doc) => batch.delete(doc.ref));
-          if (!querySnapshot.empty) await batch.commit();
-          await deleteDoc(doc(refProductTable, id));
+          const response = await fetch(`/api/products/${id}`, {
+            method: "DELETE",
+          });
+
+          if (!response.ok) {
+            throw new Error("ไม่สามารถลบข้อมูลได้จากเซิร์ฟเวอร์");
+          }
+
+          await fetchData(); // โหลดข้อมูลใหม่
           showSnackbar("ลบข้อมูลและประวัติเรียบร้อยแล้ว", "success");
         } catch (err) {
           console.error("Error deleting product:", err);
@@ -440,8 +404,17 @@ const Product = () => {
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
     try {
-      await addDoc(refCategoryTable, { category_name: newCategoryName });
+      const response = await fetch("/api/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category_name: newCategoryName }),
+      });
+
+      if (!response.ok) throw new Error("Server error");
+
+      await fetchData(); // โหลดข้อมูลใหม่
       showSnackbar("เพิ่มหมวดหมู่สำเร็จ", "success");
+
       setNewCategoryName("");
       setOpenCatModal(false);
     } catch (err) {
@@ -461,14 +434,12 @@ const Product = () => {
     setHistoryLoading(true);
 
     try {
-      const q = query(
-        refTransactionTable,
-        where("product_id", "==", item.id),
-        firestoreOrderBy("transaction_date", "desc")
-      );
-      const querySnapshot = await getDocs(q);
-      const logs = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      setHistoryData(logs);
+      const response = await fetch(`/api/products/${item.id}/history`);
+      if (!response.ok) {
+        throw new Error("Could not fetch history");
+      }
+      const historyLogs = await response.json();
+      setHistoryData(historyLogs);
     } catch (error) {
       console.error("Error fetching history:", error);
     } finally {
@@ -522,7 +493,7 @@ const Product = () => {
 
   const getCategoryName = (catId) => {
     const cat = categories.find((c) => c.id === catId);
-    return cat ? cat.category_name : <span style={{ color: "#999", fontStyle: "italic" }}>ไม่ระบุ</span>;
+    return cat ? cat.category_name : <span style={{ color: "#999", fontStyle: "italic" }}>ไม่ระบุ</span>; // ปรับ field เป็น category_name
   };
 
   const getStockStatus = (qty) => {
@@ -676,39 +647,29 @@ const Product = () => {
   const handleSaveScannedItems = async () => {
     setLoading(true);
     try {
-        const batch = writeBatch(db); // Note: batch writes limits to 500 ops.
-        
-        const promises = scannedItems.map(async (item) => {
-            const payload = {
-                barcode: item.barcode || Math.floor(10000000 + Math.random() * 90000000).toString(),
-                product_name: item.product_name,
-                cost_price: parseFloat(item.cost_price),
-                selling_price: parseFloat(item.selling_price),
-                stock_quantity: parseInt(item.stock_quantity),
-                location: item.location,
-                Categories_category_id: item.Categories_category_id,
-                created_at: serverTimestamp()
-            };
-
-            const docRef = await addDoc(refProductTable, payload);
-            
-            await recordTransaction(
-                { id: docRef.id, ...payload },
-                "new_product",
-                parseInt(item.stock_quantity),
-                0,
-                parseInt(item.stock_quantity),
-                "นำเข้าจากบิล/AI"
-            );
+        const response = await fetch('/api/products/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                products: scannedItems.map(item => ({
+                    ...item,
+                    category_id: item.Categories_category_id
+                }))
+            })
         });
 
-        await Promise.all(promises);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || "Server error during batch import");
+        }
 
         showSnackbar(`นำเข้าสินค้าสำเร็จ ${scannedItems.length} รายการ`, "success");
         setOpenScanDialog(false);
         setScannedItems([]);
         setScannedImage(null);
         setScannedPrefix(""); // Reset Prefix
+
+        await fetchData(); // โหลดข้อมูลใหม่ทั้งหมด
 
     } catch (error) {
         console.error("Batch Import Error:", error);
@@ -1009,7 +970,7 @@ const Product = () => {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={getCategoryName(item.Categories_category_id)}
+                        label={getCategoryName(item.category_id)}
                         size="small"
                         sx={{ bgcolor: "#e3f2fd", color: "#1565c0" }}
                       />
@@ -1881,26 +1842,49 @@ const Product = () => {
                 sx={{ flexDirection: { xs: "column", sm: "row" } }}
               >
                 <Box sx={{ flex: 1, display: "flex", gap: 1 }}>
-                  <FormControl fullWidth>
-                    <InputLabel>หมวดหมู่สินค้า</InputLabel>
-                    <Select
-                      name="Categories_category_id"
-                      value={form.Categories_category_id}
-                      label="หมวดหมู่สินค้า"
-                      onChange={handleChang}
-                      startAdornment={
-                        <InputAdornment position="start">
-                            <CategoryIcon fontSize="small" color="action" />
-                        </InputAdornment>
-                      }
-                    >
-                      {categories.map((cat) => (
-                        <MenuItem key={cat.id} value={cat.id}>
-                          {cat.category_name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                  {/* ✅ ส่วนที่แก้ไข: ใช้ Autocomplete แทน Select */}
+                  <Autocomplete
+                    id="category-autocomplete"
+                    options={categories} // ใช้ state `categories` ที่ดึงมาจาก API
+                    getOptionLabel={(option) => option.category_name}
+                    value={categories.find((cat) => cat.id === form.Categories_category_id) || null}
+                    onChange={(event, newValue) => {
+                      setForm({
+                        ...form,
+                        Categories_category_id: newValue ? newValue.id : "",
+                      });
+                      if (errors.Categories_category_id) setErrors({ ...errors, Categories_category_id: null });
+                    }}
+                    fullWidth
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="หมวดหมู่สินค้า"
+                        placeholder="พิมพ์เพื่อค้นหา..."
+                        InputProps={{
+                          ...params.InputProps,
+                          startAdornment: (
+                            <>
+                              <InputAdornment position="start">
+                                <CategoryIcon fontSize="small" color="action" />
+                              </InputAdornment>
+                              {params.InputProps.startAdornment}
+                            </>
+                          ),
+                        }}
+                      />
+                    )}
+                    renderOption={(props, option) => {
+                      const { key, ...otherProps } = props;
+                      return (
+                        <li key={key} {...otherProps}>
+                          {option.category_name}
+                        </li>
+                      );
+                    }}
+                  />
+                  {/* ✅ สิ้นสุดส่วนแก้ไข */}
+                  
                   <Button
                     variant="outlined"
                     sx={{
