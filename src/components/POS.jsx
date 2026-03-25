@@ -1,17 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-// --- Config Firebase ---
-import { db } from "../firebase/config";
-import {
-  collection,
-  onSnapshot,
-  writeBatch,
-  doc,
-  increment,
-  serverTimestamp,
-} from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
 
 // --- Print Library ---
 import { useReactToPrint } from "react-to-print";
+import api from "./api"; // ✅ Fix: Corrected import path
 
 import {
   Box,
@@ -37,6 +29,10 @@ import {
   DialogActions,
   ToggleButton,
   ToggleButtonGroup,
+  Autocomplete,
+  FormControl,
+  Select,
+  MenuItem, // Added MenuItem import
 } from "@mui/material";
 
 // --- Icons ---
@@ -54,12 +50,13 @@ import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import PrintIcon from '@mui/icons-material/Print';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
-const POS = () => {
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([
-    { id: "all", name: "ทั้งหมด" },
-  ]);
+// --- Customer Icons ---
+import PersonSearchIcon from '@mui/icons-material/PersonSearch';
 
+const POS = () => {
+  const navigate = useNavigate();
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -75,7 +72,7 @@ const POS = () => {
   const [changeAmount, setChangeAmount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- ✅ Receipt State (เพิ่มใหม่) ---
+  // --- Receipt State ---
   const [openReceipt, setOpenReceipt] = useState(false);
   const [lastOrder, setLastOrder] = useState(null); // เก็บข้อมูลบิลล่าสุดเพื่อแสดงผล
   const receiptRef = useRef(); // Ref สำหรับสั่งพิมพ์
@@ -87,33 +84,69 @@ const POS = () => {
     severity: "success",
   });
 
-  // ================= CONNECT FIREBASE =================
+  // --- Customer State ---
+  const [customerSearchText, setCustomerSearchText] = useState("");
+  const [customerOptions, setCustomerOptions] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+
+  // --- User State ---
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // ================= DATA FETCHING =================
   useEffect(() => {
-    const unsubProducts = onSnapshot(collection(db, "Products"), (snapshot) => {
-      const productData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setProducts(productData);
-      setLoading(false);
-    });
+    const fetchInitialData = async () => {
+      try {
+        setLoading(true);
+        // ✅ Use the new 'api' utility. It handles tokens and errors automatically.
+        const [productsRes, categoriesRes] = await Promise.all([
+          api.get('/products'),
+          api.get('/categories')
+        ]);
+        
+        const productsData = productsRes.data;
+        const categoriesData = categoriesRes.data;
 
-    const unsubCategories = onSnapshot(
-      collection(db, "Categories"),
-      (snapshot) => {
-        const categoryList = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          name: doc.data().category_name || "ไม่ระบุชื่อ",
-        }));
-        setCategories([{ id: "all", name: "ทั้งหมด" }, ...categoryList]);
+        setProducts(productsData);
+        setCategories([{ id: "all", category_name: "ทั้งหมด" }, ...categoriesData]);
+
+        // Get logged-in user from localStorage
+        const userString = localStorage.getItem('user');
+        if (userString) {
+            try {
+                setCurrentUser(JSON.parse(userString));
+            } catch (parseError) {
+                console.error("Error parsing user data from localStorage:", parseError);
+            }
+        }
+      } catch (error) {
+        showNotification("ไม่สามารถโหลดข้อมูลสินค้าได้", "error");
+        console.error(error);
+      } finally {
+        setLoading(false);
       }
-    );
-
-    return () => {
-      unsubProducts();
-      unsubCategories();
     };
+
+    fetchInitialData();
   }, []);
+
+  // --- Customer Search Debouncing ---
+  useEffect(() => {
+    const handler = setTimeout(async () => {
+      if (customerSearchText.length > 1) {
+        try {
+          const response = await api.get(`/customers/search?q=${customerSearchText}`);
+          const data = response.data;
+          setCustomerOptions(data);
+        } catch (error) {
+          console.error("Customer search failed:", error);
+        }
+      } else {
+        setCustomerOptions([]);
+      }
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(handler);
+  }, [customerSearchText]);
 
   // ================= LOGIC =================
 
@@ -126,7 +159,6 @@ const POS = () => {
     setNotification({ ...notification, open: false });
   };
 
-  // ✅ ฟังก์ชันสั่งพิมพ์
   const handlePrintReceipt = useReactToPrint({
     content: () => receiptRef.current,
     documentTitle: lastOrder ? lastOrder.order_number : 'Receipt',
@@ -140,6 +172,8 @@ const POS = () => {
       setDiscount("");
       setReceivedAmount("");
       setChangeAmount(0);
+      setSelectedCustomer(null);
+      setCustomerSearchText("");
   }
 
   const handleAddToCart = (product) => {
@@ -150,51 +184,64 @@ const POS = () => {
       return;
     }
 
+    // เพิ่มสินค้าใหม่เข้าตะกร้า หรือเพิ่มจำนวนถ้ามีอยู่แล้ว
     setCart((prev) => {
-      const exist = prev.find((item) => item.id === product.id);
+      const exist = prev.find((item) => item.product_id === product.product_id);
       if (exist) {
-        if (exist.qty >= stock) {
+        // คำนวณสต็อกที่เหลือเทียบกับจำนวนในตะกร้า (ในหน่วยพื้นฐาน)
+        const currentQtyInBase = exist.qty * (exist.conversionRate || 1);
+        if (currentQtyInBase >= stock) {
           showNotification(
-            `เพิ่มไม่ได้! สินค้าเหลือเพียง ${stock} ชิ้น`,
+            `เพิ่มไม่ได้! สินค้าในคลังไม่พอ (มี ${stock} ${product.base_unit})`,
             "warning"
           );
           return prev;
         }
         return prev.map((item) =>
-          item.id === product.id ? { ...item, qty: item.qty + 1 } : item
+          item.product_id === product.product_id ? { ...item, qty: item.qty + 1 } : item // เพิ่มทีละ 1 หน่วยที่เลือกไว้
         );
       }
-      return [...prev, { ...product, qty: 1 }];
+      // ถ้าเป็นสินค้าใหม่, เพิ่มเข้าตะกร้าพร้อมข้อมูลหน่วย
+      return [...prev, { 
+        ...product, 
+        qty: 1, 
+        selectedUnitName: product.base_unit || 'ชิ้น', // default to base unit, with fallback
+        conversionRate: 1, // default to 1
+      }];
     });
   };
 
-  // ✅ ADDED: Logic สำหรับสแกน Barcode (เมื่อกด Enter ในช่องค้นหา)
   const handleScanBarcode = (e) => {
     if (e.key === "Enter" && searchTerm.trim() !== "") {
-        // ค้นหาสินค้าที่ Barcode ตรงกับคำค้นหาเป๊ะๆ
-        const scannedProduct = products.find((p) => p.barcode === searchTerm.trim());
-        
+        const scannedProduct = products.find((p) => p.sku === searchTerm.trim());
         if (scannedProduct) {
             handleAddToCart(scannedProduct);
-            setSearchTerm(""); // เคลียร์ช่องค้นหาเพื่อรอสแกนชิ้นต่อไป
-            e.preventDefault(); // ป้องกันการ reload หรือ submit form
+            setSearchTerm(""); 
+            e.preventDefault(); 
+        } else {
+            showNotification("ไม่พบสินค้าจากบาร์โค้ดนี้", "error");
         }
     }
   };
 
   const handleUpdateQty = (id, delta) => {
     setCart((prev) =>
-      prev
-        .map((item) => {
-          if (item.id === id) {
-            const product = products.find((p) => p.id === id);
-            const stock = parseInt(product?.stock_quantity) || 0;
+      prev.map((item) => {
+          if (item.product_id === id) {
+            const productInState = products.find((p) => p.product_id === id);
+            const totalStockInBaseUnits = parseInt(productInState?.stock_quantity) || 0;
+            
+            // คำนวณจำนวนใหม่ในหน่วยพื้นฐาน
+            const newQty = item.qty + delta;
+            const newQtyInBaseUnits = newQty * (item.conversionRate || 1);
 
-            if (delta > 0 && item.qty >= stock) {
-              showNotification(`สต็อกไม่พอ (มี ${stock} ชิ้น)`, "warning");
+            if (delta > 0 && newQtyInBaseUnits > totalStockInBaseUnits) {
+              showNotification(`สต็อกไม่พอ (มีเทียบเท่า ${totalStockInBaseUnits} ${item.base_unit})`, "warning");
               return item;
             }
-            return { ...item, qty: Math.max(0, item.qty + delta) };
+            
+            // ถ้าจำนวนใหม่เป็น 0 หรือน้อยกว่า ให้กรองออกใน step ถัดไป
+            return { ...item, qty: newQty };
           }
           return item;
         })
@@ -203,11 +250,29 @@ const POS = () => {
   };
 
   const handleDeleteItem = (id) => {
-    setCart((prev) => prev.filter((item) => item.id !== id));
+    setCart((prev) => prev.filter((item) => item.product_id !== id));
+  };
+
+  const handleUnitChange = (productId, newUnitName) => {
+      setCart(prevCart => prevCart.map(item => {
+          if (item.product_id === productId) {
+              const allUnits = [
+                  { unit_name: item.base_unit, conversion_rate: 1 },
+                  ...(item.units || [])
+              ];
+              const selectedUnit = allUnits.find(u => u.unit_name === newUnitName);
+              return {
+                  ...item,
+                  selectedUnitName: newUnitName,
+                  conversionRate: selectedUnit.conversion_rate,
+              };
+          }
+          return item;
+      }));
   };
 
   const subtotal = cart.reduce(
-    (sum, item) => sum + Number(item.selling_price) * item.qty,
+    (sum, item) => sum + (Number(item.selling_price) * (item.conversionRate || 1) * item.qty),
     0
   );
   
@@ -217,11 +282,11 @@ const POS = () => {
   const getCategoryNameById = (catId) => {
     if (!catId) return "อื่นๆ";
     const found = categories.find((c) => c.id === catId);
-    return found ? found.name : "อื่นๆ";
+    return found ? found.category_name : "อื่นๆ";
   };
 
   const filteredProducts = products.filter((p) => {
-    const productCatId = p.Categories_category_id || "";
+    const productCatId = p.category_id || "";
     const matchCat =
       selectedCategoryId === "all" || productCatId === selectedCategoryId;
     const matchSearch = p.product_name
@@ -261,100 +326,66 @@ const POS = () => {
     }
   };
 
-  const generateOrderNumber = () => {
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-    const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, "");
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
-    return `INV-${dateStr}-${timeStr}-${random}`;
-  };
-
   const handleProcessPayment = async () => {
     const receivedVal = parseFloat(receivedAmount) || 0;
 
-    if (receivedVal < total) {
+    if (paymentMethod === 'cash' && receivedVal < total) {
       showNotification("ยอดเงินที่รับมาไม่เพียงพอ", "error");
       return;
     }
 
     setIsProcessing(true);
 
-    try {
-      const batch = writeBatch(db);
-      const orderRef = doc(collection(db, "Orders"));
-      const transactionRef = collection(db, "Stock_Transactions");
-
-      const orderItems = cart.map((item) => {
-        const lineTotal = item.qty * parseFloat(item.selling_price);
-        
-        const productRef = doc(db, "Products", item.id);
-        batch.update(productRef, {
-            stock_quantity: increment(-item.qty)
-        });
-
-        const newTransRef = doc(transactionRef);
-        batch.set(newTransRef, {
-            product_id: item.id,
-            barcode: item.barcode || "",
-            product_name: item.product_name,
-            transaction_type: "sale_out",
-            quantity_change: -item.qty,
-            previous_stock: parseInt(item.stock_quantity),
-            current_stock: parseInt(item.stock_quantity) - item.qty,
-            note: `ขายปลีกบิล #${orderRef.id}`,
-            transaction_date: serverTimestamp(),
-            cost_price: parseFloat(item.cost_price),
-            selling_price: parseFloat(item.selling_price)
-        });
-
-        return {
-          product_id: item.id,
-          barcode: item.barcode || "",
-          product_name: item.product_name,
-          category: getCategoryNameById(item.Categories_category_id),
-          cost_price: parseFloat(item.cost_price),
-          selling_price: parseFloat(item.selling_price),
-          quantity: item.qty,
-          discount_per_item: 0.00,
-          total_line: lineTotal
-        };
-      });
-
-      // Prepare Order Data
-      const orderData = {
-        id: orderRef.id,
-        order_number: generateOrderNumber(),
-        transaction_date: serverTimestamp(), // ส่งขึ้น Firebase
-        display_date: new Date(), // ✅ เก็บค่า Date object ไว้แสดงผลทันทีใน Receipt (ไม่ต้องรอโหลด)
-        
-        subtotal: subtotal,
-        discount: discountVal,
-        grand_total: total,
-        
+    const pointsEarned = selectedCustomer ? Math.floor(total / 100) * 10 : 0;
+    const orderPayload = {
+        cart: cart.map(item => {
+          const unitPrice = item.selling_price * (item.conversionRate || 1);
+          const totalPrice = unitPrice * item.qty;
+          return {
+            product_id: item.product_id,
+            quantity: item.qty,
+            unit_price: unitPrice,
+            total_price: totalPrice,
+            // FIX: ส่งข้อมูลดิบเพื่อให้ Backend คำนวณราคาใหม่อีกครั้งได้
+            selling_price: item.selling_price,
+            conversion_rate: item.conversionRate,
+          };
+        }),
+        total_amount: subtotal,
+        discount_amount: discountVal,
+        net_amount: total,
         payment_method: paymentMethod,
-        received_amount: receivedVal,
-        change_amount: paymentMethod === 'transfer' ? 0 : (changeAmount > 0 ? changeAmount : 0),
+        customer_id: selectedCustomer?.id || null,
+        points_earned: pointsEarned, // NEW: ส่งแต้มที่ได้รับไปยัง Backend
         
-        cashier_id: "USER_ADMIN",
-        cashier_name: "Admin",
-        status: "completed",
-        note: "",
-        items: orderItems
-      };
+    };
 
-      batch.set(orderRef, orderData);
-      await batch.commit();
-
+    try {
+      // ✅ Use the new 'api' utility for POST requests. It handles headers and errors.
+      const response = await api.post('/pos/checkout', orderPayload);
+      
+      const result = response.data;
       showNotification(`ชำระเงินสำเร็จ!`, "success");
       
-      // ✅ เก็บข้อมูลบิลล่าสุด และเปิดหน้าใบเสร็จ
-      setLastOrder(orderData);
-      setOpenPayment(false); // ปิดหน้าจ่ายเงิน
-      setOpenReceipt(true);  // เปิดหน้าใบเสร็จ
+      setLastOrder({
+          ...orderPayload,
+          receipt_no: result.receipt_no,
+          cart: cart, // Use original cart for display to show selected units
+          display_date: new Date(),
+          cashier_name: currentUser?.username || 'Admin',
+          customer_name: selectedCustomer?.customer_name || 'ลูกค้าทั่วไป',
+          received_amount: receivedVal,
+          change_amount: paymentMethod === 'transfer' ? 0 : (changeAmount > 0 ? changeAmount : 0),
+          points_earned: pointsEarned, // NEW: เพิ่มแต้มที่ได้รับในข้อมูลใบเสร็จ
+      });
+      setOpenPayment(false);
+      setOpenReceipt(true); 
 
     } catch (error) {
       console.error("Error processing payment:", error);
-      showNotification("เกิดข้อผิดพลาดในการบันทึกข้อมูล", "error");
+      // ✅ Axios provides detailed error info
+      const errorMessage = error.response?.data?.message || error.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล";
+      showNotification(errorMessage, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -379,11 +410,10 @@ const POS = () => {
             <Typography variant="body2" color="text.secondary">สินค้าที่แสดง {filteredProducts.length} รายการ</Typography>
           </Box>
           <TextField
-            placeholder="ค้นหาชื่อสินค้า..."
+            placeholder="ค้นหาชื่อสินค้า หรือ สแกนบาร์โค้ด..."
             size="small"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            // ✅ ADDED: เพิ่ม onKeyDown และ autoFocus
             onKeyDown={handleScanBarcode}
             autoFocus
             InputProps={{
@@ -398,7 +428,7 @@ const POS = () => {
             {categories.map((cat) => (
               <Chip
                 key={cat.id}
-                label={cat.name}
+                label={cat.category_name}
                 onClick={() => setSelectedCategoryId(cat.id)}
                 sx={{
                   fontWeight: 600,
@@ -419,12 +449,12 @@ const POS = () => {
               const stock = parseInt(product.stock_quantity) || 0;
               const isOutOfStock = stock <= 0;
               return (
-                <Grid item size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={product.id}>
+                <Grid item size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={product.product_id}>
                   <Card sx={{ height: "100%", borderRadius: 3, opacity: isOutOfStock ? 0.6 : 1, bgcolor: "white", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", "&:hover": { transform: !isOutOfStock && "translateY(-4px)", boxShadow: "0 8px 16px rgba(26, 71, 42, 0.1)" } }}>
                     <CardActionArea onClick={() => handleAddToCart(product)} sx={{ height: "100%", p: 2.5, display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "space-between" }}>
                       <Box width="100%" mb={2}>
                         <Typography variant="h6" fontWeight="bold" sx={{ mb: 1, lineHeight: 1.3, fontSize: "1.1rem", color: "#333" }}>{product.product_name}</Typography>
-                        <Typography variant="caption" sx={{ color: "#1a472a", fontWeight: "bold", bgcolor: "#e8f5e9", px: 1, py: 0.5, borderRadius: 1 }}>{getCategoryNameById(product.Categories_category_id)}</Typography>
+                        <Typography variant="caption" sx={{ color: "#1a472a", fontWeight: "bold", bgcolor: "#e8f5e9", px: 1, py: 0.5, borderRadius: 1 }}>{getCategoryNameById(product.category_id)}</Typography>
                       </Box>
                       <Box width="100%" display="flex" justifyContent="space-between" alignItems="flex-end">
                         <Box>
@@ -451,7 +481,49 @@ const POS = () => {
             </Badge>
             <Typography variant="h6" fontWeight="800" color="#1a472a">ตะกร้าสินค้า</Typography>
           </Box>
-          <Typography variant="caption" color="text.secondary">Version 1.2.0</Typography>
+          <Typography variant="caption" color="text.secondary">Version 2.0.0</Typography>
+        </Box>
+
+        {/* Customer Search */}
+        <Box sx={{ p: 2, borderBottom: '1px solid #f0f0f0' }}>
+            <Autocomplete
+                value={selectedCustomer}
+                onChange={(event, newValue) => {
+                    setSelectedCustomer(newValue);
+                }}
+                inputValue={customerSearchText}
+                onInputChange={(event, newInputValue) => {
+                    setCustomerSearchText(newInputValue);
+                }}
+                options={customerOptions}
+                getOptionLabel={(option) => `${option.customer_name} (${option.phone_number || 'N/A'})`}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                noOptionsText="พิมพ์เพื่อค้นหาลูกค้า..."
+                renderInput={(params) => (
+                    <TextField
+                        {...params}
+                        label="ค้นหาลูกค้า (ชื่อ/เบอร์โทร)"
+                        size="small"
+                        InputProps={{
+                            ...params.InputProps,
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <PersonSearchIcon />
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                )}
+            />
+            {selectedCustomer && (
+                <Chip
+                    label={`ลูกค้า: ${selectedCustomer.customer_name}`}
+                    onDelete={() => setSelectedCustomer(null)}
+                    color="primary"
+                    size="small"
+                    sx={{ mt: 1 }}
+                />
+            )}
         </Box>
 
         <Box sx={{ flex: 1, overflowY: "auto", p: 2, bgcolor: "#f8f9fa" }}>
@@ -462,21 +534,33 @@ const POS = () => {
             </Box>
           ) : (
             cart.map((item) => (
-              <Paper key={item.id} elevation={0} sx={{ mb: 1.5, p: 2, borderRadius: 3, border: "1px solid #eee" }}>
+              <Paper key={item.product_id} elevation={0} sx={{ mb: 1.5, p: 2, borderRadius: 3, border: "1px solid #eee" }}>
                 <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
                     <Box sx={{ maxWidth: "85%" }}>
                         <Typography variant="body1" fontWeight="700" sx={{ lineHeight: 1.2, color: "#2d3436" }}>{item.product_name}</Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>฿{Number(item.selling_price).toLocaleString()}</Typography>
                     </Box>
-                    <IconButton size="small" onClick={() => handleDeleteItem(item.id)} sx={{ color: "#e0e0e0", p: 0.5, "&:hover": { color: "#ff4d4d", bgcolor: "#ffeaea" } }}><DeleteOutlineIcon fontSize="small" /></IconButton>
+                    <IconButton size="small" onClick={() => handleDeleteItem(item.product_id)} sx={{ color: "#e0e0e0", p: 0.5, "&:hover": { color: "#ff4d4d", bgcolor: "#ffeaea" } }}><DeleteOutlineIcon fontSize="small" /></IconButton>
                 </Box>
                 <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
-                    <Box display="flex" alignItems="center" bgcolor="#f1f3f5" borderRadius="50px" px={0.5} py={0.5}>
-                        <IconButton size="small" onClick={() => handleUpdateQty(item.id, -1)} sx={{ width: 28, height: 28, bgcolor: "white" }}><RemoveIcon sx={{ fontSize: 16, color: "#1a472a" }} /></IconButton>
-                        <Typography variant="body2" fontWeight="bold" sx={{ mx: 1.5, minWidth: 20, textAlign: "center" }}>{item.qty}</Typography>
-                        <IconButton size="small" onClick={() => handleUpdateQty(item.id, 1)} sx={{ width: 28, height: 28, bgcolor: "#1a472a", color: "white" }}><AddIcon sx={{ fontSize: 16 }} /></IconButton>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <Box display="flex" alignItems="center" bgcolor="#f1f3f5" borderRadius="50px" px={0.5} py={0.5}>
+                            <IconButton size="small" onClick={() => handleUpdateQty(item.product_id, -1)} sx={{ width: 28, height: 28, bgcolor: "white" }}><RemoveIcon sx={{ fontSize: 16, color: "#1a472a" }} /></IconButton>
+                            <Typography variant="body2" fontWeight="bold" sx={{ mx: 1.5, minWidth: 20, textAlign: "center" }}>{item.qty}</Typography>
+                            <IconButton size="small" onClick={() => handleUpdateQty(item.product_id, 1)} sx={{ width: 28, height: 28, bgcolor: "#1a472a", color: "white" }}><AddIcon sx={{ fontSize: 16 }} /></IconButton>
+                        </Box>
+                        <FormControl size="small" sx={{ minWidth: 80 }}>
+                            <Select value={item.selectedUnitName || item.base_unit} onChange={(e) => handleUnitChange(item.product_id, e.target.value)} sx={{ fontSize: '0.8rem', borderRadius: '50px', '& .MuiOutlinedInput-notchedOutline': { borderWidth: 0 } }}>
+                                <MenuItem value={item.base_unit}>{item.base_unit}</MenuItem>
+                                {item.units && item.units.map(unit => (
+                                    <MenuItem key={unit.unit_name} value={unit.unit_name}>{unit.unit_name}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
                     </Box>
-                    <Typography variant="subtitle1" fontWeight="800" color="#1a472a">฿{(Number(item.selling_price) * item.qty).toLocaleString()}</Typography>
+                    <Typography variant="subtitle1" fontWeight="800" color="#1a472a">
+                        ฿{(Number(item.selling_price) * (item.conversionRate || 1) * item.qty).toLocaleString()}
+                    </Typography>
                 </Box>
               </Paper>
             ))
@@ -603,7 +687,7 @@ const POS = () => {
                 onClick={handleProcessPayment} 
                 variant="contained" 
                 size="large" 
-                disabled={isProcessing || (parseFloat(receivedAmount) < total)}
+                disabled={isProcessing || (paymentMethod === 'cash' && parseFloat(receivedAmount) < total)}
                 sx={{ bgcolor: '#1a472a', px: 4, py: 1.5, fontSize: '1.1rem', "&:hover": { bgcolor: '#143620' } }}
             >
                 {isProcessing ? <CircularProgress size={24} color="inherit" /> : `ยืนยัน (${paymentMethod === 'cash' ? 'เงินสด' : 'โอนเงิน'})`}
@@ -611,15 +695,14 @@ const POS = () => {
         </DialogActions>
       </Dialog>
 
-      {/* --- ✅ RECEIPT DIALOG (ส่วนบิลใบเสร็จ) --- */}
+      {/* --- RECEIPT DIALOG --- */}
       <Dialog
         open={openReceipt}
         onClose={handleCloseReceipt}
         maxWidth="xs"
-        PaperProps={{ sx: { borderRadius: 2, width: 350 } }} // ขนาดประมาณบิลความร้อน 80mm
+        PaperProps={{ sx: { borderRadius: 2, width: 350 } }}
       >
         <DialogContent sx={{ p: 0 }}>
-            {/* พื้นที่ที่จะสั่งพิมพ์ */}
             <Box ref={receiptRef} sx={{ p: 3, bgcolor: 'white', color: 'black', fontFamily: 'monospace' }}>
                 <Box textAlign="center" mb={2}>
                     <CheckCircleIcon color="success" sx={{ fontSize: 40, mb: 1 }} />
@@ -631,27 +714,26 @@ const POS = () => {
 
                 <Divider sx={{ my: 2, borderStyle: 'dashed' }} />
 
-                {/* Receipt Header Info */}
                 <Box textAlign="center" mb={2}>
                     <Typography fontWeight="bold" variant="subtitle1">Three Shop</Typography>
-                    <Typography variant="caption" display="block">เลขที่ใบเสร็จ: {lastOrder?.order_number}</Typography>
+                    <Typography variant="caption" display="block">เลขที่ใบเสร็จ: {lastOrder?.receipt_no}</Typography>
                     <Typography variant="caption" display="block">พนักงาน: {lastOrder?.cashier_name}</Typography>
+                    <Typography variant="caption" display="block">ลูกค้า: {lastOrder?.customer_name}</Typography>
                 </Box>
 
                 <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
 
-                {/* Items List */}
                 <Box>
-                    {lastOrder?.items?.map((item, index) => (
+                    {lastOrder?.cart?.map((item, index) => (
                         <Box key={index} display="flex" justifyContent="space-between" mb={0.5}>
                             <Box sx={{ width: '60%' }}>
                                 <Typography variant="caption" fontWeight="bold">{item.product_name}</Typography>
                                 <Typography variant="caption" display="block" color="text.secondary">
-                                    {item.quantity} x {item.selling_price}
+                                    {item.qty} {item.selectedUnitName} x {(item.selling_price * (item.conversionRate || 1)).toLocaleString()}
                                 </Typography>
                             </Box>
                             <Typography variant="caption" fontWeight="bold">
-                                {item.total_line.toLocaleString()}
+                                {(item.qty * item.selling_price * (item.conversionRate || 1)).toLocaleString()}
                             </Typography>
                         </Box>
                     ))}
@@ -659,25 +741,23 @@ const POS = () => {
 
                 <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
 
-                {/* Totals */}
                 <Box display="flex" justifyContent="space-between">
                     <Typography variant="caption">รวมเป็นเงิน</Typography>
-                    <Typography variant="caption">{lastOrder?.subtotal?.toLocaleString()}</Typography>
+                    <Typography variant="caption">{lastOrder?.total_amount?.toLocaleString()}</Typography>
                 </Box>
-                {lastOrder?.discount > 0 && (
+                {lastOrder?.discount_amount > 0 && (
                     <Box display="flex" justifyContent="space-between" color="error.main">
                         <Typography variant="caption">ส่วนลด</Typography>
-                        <Typography variant="caption">-{lastOrder?.discount?.toLocaleString()}</Typography>
+                        <Typography variant="caption">-{lastOrder?.discount_amount?.toLocaleString()}</Typography>
                     </Box>
                 )}
                 <Box display="flex" justifyContent="space-between" mt={1}>
                     <Typography variant="subtitle2" fontWeight="bold">ยอดสุทธิ</Typography>
-                    <Typography variant="subtitle2" fontWeight="bold">{lastOrder?.grand_total?.toLocaleString()}</Typography>
+                    <Typography variant="subtitle2" fontWeight="bold">{lastOrder?.net_amount?.toLocaleString()}</Typography>
                 </Box>
 
                 <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
 
-                {/* Payment Info */}
                 <Box display="flex" justifyContent="space-between">
                     <Typography variant="caption">ชำระโดย ({lastOrder?.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'})</Typography>
                     <Typography variant="caption">{lastOrder?.received_amount?.toLocaleString()}</Typography>
@@ -686,6 +766,12 @@ const POS = () => {
                     <Typography variant="caption">เงินทอน</Typography>
                     <Typography variant="caption">{lastOrder?.change_amount?.toLocaleString()}</Typography>
                 </Box>
+                {lastOrder?.points_earned > 0 && (
+                    <Box display="flex" justifyContent="space-between" mt={1}>
+                        <Typography variant="caption" fontWeight="bold" color="success.main">แต้มที่ได้รับ</Typography>
+                        <Typography variant="caption" fontWeight="bold" color="success.main">{lastOrder?.points_earned} แต้ม</Typography>
+                    </Box>
+                )}
 
                 <Box textAlign="center" mt={3}>
                     <Typography variant="caption" color="text.secondary">ขอบคุณที่ใช้บริการ</Typography>

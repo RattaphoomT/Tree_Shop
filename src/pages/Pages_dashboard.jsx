@@ -3,12 +3,14 @@ import Layout from '../Layout/Layout'
 import Dashboard from '../components/Dashboard'
 import { Box } from '@mui/material'
 
-const Pages_dasborad = () => {
+const Pages_dashboard = () => {
   return (
     <Layout>
-        <Dashboard />
+        <Box sx={{ overflow: 'hidden' }}>
+            <Dashboard />
+        </Box>
     </Layout>
   )
 }
 
-export default Pages_dasborad
+export default Pages_dashboard

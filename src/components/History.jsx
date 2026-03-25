@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from "react";
-// --- Config Firebase ---
-import { db } from "../firebase/config";
-import { collection, getDocs, query, orderBy, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import React, { useState, useEffect, useRef } from "react";
 
+import { useNavigate } from "react-router-dom";
+import { useReactToPrint } from "react-to-print";
 // --- Libraries ---
 import Swal from "sweetalert2";
 import dayjs from 'dayjs';
@@ -17,6 +16,7 @@ dayjs.locale('th');
 import {
   Box, Container, Typography, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Paper, IconButton, Chip, Stack, TextField,
+  Autocomplete, Divider,
   InputAdornment, TablePagination, Dialog, DialogContent,
   DialogActions, Button, Grid, FormControl, InputLabel, Select, MenuItem,
   Card, Avatar, Tooltip, CircularProgress, alpha, useTheme
@@ -36,17 +36,31 @@ import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import HistoryIcon from "@mui/icons-material/History"; // ใช้ไอคอนนี้สำหรับ Header
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import FilterAltIcon from "@mui/icons-material/FilterAlt";
+import PersonIcon from '@mui/icons-material/Person'; // NEW
+import PrintIcon from '@mui/icons-material/Print';
 
 import { visuallyHidden } from "@mui/utils"; // เผื่อใช้ sorting ในอนาคต
+import api from "./api"; // ✅ Fix: Corrected import path
 
 const History = () => {
   const theme = useTheme();
+  const navigate = useNavigate();
   
+  // --- Print Ref ---
+  const receiptRef = useRef();
+  const handlePrint = useReactToPrint({
+    content: () => receiptRef.current,
+  });
+
   // --- States ---
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all"); // เพิ่ม Filter Status
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterCustomer, setFilterCustomer] = useState(null); // NEW
+  const [customerSearchText, setCustomerSearchText] = useState(""); // NEW
+  const [customerOptions, setCustomerOptions] = useState([]); // NEW
+
   
   // Pagination
   const [page, setPage] = useState(0);
@@ -65,17 +79,35 @@ const History = () => {
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const q = query(collection(db, "Orders"), orderBy("transaction_date", "desc"));
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const response = await api.get('/history');
+      const data = response.data;
       setOrders(data);
-      setLoading(false);
     } catch (error) {
       console.error("Error fetching orders:", error);
       Swal.fire("Error", "ไม่สามารถดึงข้อมูลได้", "error");
+    } finally {
       setLoading(false);
     }
   };
+
+  // --- Customer Search Debouncing ---
+  useEffect(() => {
+    const handler = setTimeout(async () => {
+      if (customerSearchText.length > 1) {
+        try {
+          const response = await api.get(`/customers/search?q=${customerSearchText}`);
+          const data = response.data;
+          setCustomerOptions(data);
+        } catch (error) {
+          console.error("Customer search failed:", error);
+        }
+      } else {
+        setCustomerOptions([]);
+      }
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(handler);
+  }, [customerSearchText]);
 
   useEffect(() => {
     fetchOrders();
@@ -83,18 +115,23 @@ const History = () => {
 
   // --- Handlers ---
 
-  // 1. Search & Filter
+  // 1. Search & Filter (Updated)
   const filteredOrders = orders.filter((order) => {
+    // Search Term
     const term = searchTerm.toLowerCase();
-    const orderNo = (order.order_number || "").toLowerCase();
+    const orderNo = (order.receipt_no || order.order_number || "").toLowerCase(); // Search by receipt number
+    const customerName = (order.customer_name || "").toLowerCase(); // Search by customer name
     
     // Filter by Search Term
-    const matchesSearch = orderNo.includes(term);
+    const matchesSearch = orderNo.includes(term) || customerName.includes(term);
 
     // Filter by Status Dropdown
-    const matchesStatus = filterStatus === "all" || order.status === filterStatus;
+    const matchesStatus = filterStatus === "all" || (order.status || 'completed') === filterStatus;
+    
+    // Filter by Customer (NEW)
+    const matchesCustomer = !filterCustomer || order.customer_id === filterCustomer.id;
 
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesCustomer;
   });
 
   // 2. Pagination
@@ -105,9 +142,18 @@ const History = () => {
   };
 
   // 3. View Details
-  const handleView = (order) => {
+  const handleView = async (order) => {
     setSelectedOrder(order);
     setViewOpen(true);
+    // NEW: Fetch items for this specific order
+    try {
+        const response = await api.get(`/history/${order.id}`);
+        const items = response.data;
+        setSelectedOrder(prev => ({ ...prev, items: items })); // Update state with fetched items
+    } catch (error) {
+        console.error(error);
+        Swal.fire("Error", "ไม่สามารถดึงรายการสินค้าในบิลได้", "error");
+    }
   };
 
   // 4. Edit Order
@@ -121,16 +167,11 @@ const History = () => {
   const handleSaveEdit = async () => {
     if (!selectedOrder) return;
     try {
-      const orderRef = doc(db, "Orders", selectedOrder.id);
-      await updateDoc(orderRef, {
-        status: editStatus,
-        payment_method: editPayment
+      await api.put(`/history/${selectedOrder.id}`, { 
+        payment_method: editPayment 
       });
       
-      const updatedOrders = orders.map(o => 
-        o.id === selectedOrder.id ? { ...o, status: editStatus, payment_method: editPayment } : o
-      );
-      setOrders(updatedOrders);
+      await fetchOrders();
       setEditOpen(false);
       
       Swal.fire({
@@ -143,30 +184,32 @@ const History = () => {
 
     } catch (error) {
       console.error("Update error:", error);
-      Swal.fire("Error", "เกิดข้อผิดพลาดในการแก้ไข", "error");
+      const errorMessage = error.response?.data?.message || "เกิดข้อผิดพลาดในการแก้ไข";
+      Swal.fire("Error", errorMessage, "error");
     }
   };
 
   // 5. Delete Order
   const handleDeleteClick = (order) => {
     Swal.fire({
-      title: 'ยืนยันการลบ?',
-      text: `คุณต้องการลบรายการ ${order.order_number} ใช่หรือไม่?`,
+      title: 'ยืนยันการยกเลิกรายการ?',
+      text: `คุณต้องการยกเลิกบิล ${order.receipt_no || order.order_number} ใช่หรือไม่? สต็อกสินค้าจะถูกคืนเข้าระบบ`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#d33',
       cancelButtonColor: '#3085d6',
-      confirmButtonText: 'ใช่, ลบเลย',
+      confirmButtonText: 'ใช่, ยกเลิกเลย',
       cancelButtonText: 'ยกเลิก'
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
-          await deleteDoc(doc(db, "Orders", order.id));
-          setOrders(orders.filter(o => o.id !== order.id));
-          Swal.fire('ลบสำเร็จ!', 'รายการถูกลบเรียบร้อยแล้ว.', 'success');
+          await api.delete(`/history/${order.id}`);
+          await fetchOrders(); // Refetch after delete
+          Swal.fire('ยกเลิกสำเร็จ!', 'รายการถูกยกเลิก และสต็อกสินค้าได้ถูกคืนเข้าระบบแล้ว', 'success');
         } catch (error) {
           console.error("Delete error:", error);
-          Swal.fire("Error", "ไม่สามารถลบข้อมูลได้", "error");
+          const errorMessage = error.response?.data?.message || "ไม่สามารถยกเลิกรายการได้";
+          Swal.fire("Error", errorMessage, "error");
         }
       }
     });
@@ -175,6 +218,7 @@ const History = () => {
   const handleResetFilter = () => {
     setSearchTerm("");
     setFilterStatus("all");
+    setFilterCustomer(null); // NEW
   };
 
   // ✅ Helper: Status Render (ปรับสไตล์ Chip)
@@ -221,7 +265,7 @@ const History = () => {
       <Paper elevation={0} sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: "white", border: "1px solid #e0e0e0" }}>
         <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="center">
           <TextField
-            placeholder="ค้นหาเลขบิล..."
+            placeholder="ค้นหาเลขบิล หรือ ชื่อลูกค้า..."
             variant="outlined"
             size="small"
             fullWidth
@@ -252,6 +296,35 @@ const History = () => {
               <MenuItem value="cancelled">❌ ยกเลิก</MenuItem>
             </Select>
           </FormControl>
+          <Autocomplete // NEW: Customer Filter
+            id="customer-filter-autocomplete"
+            options={customerOptions}
+            getOptionLabel={(option) => `${option.customer_name} (${option.phone_number || 'N/A'})`}
+            value={filterCustomer}
+            onChange={(event, newValue) => {
+                setFilterCustomer(newValue);
+            }}
+            inputValue={customerSearchText}
+            onInputChange={(event, newInputValue) => {
+                setCustomerSearchText(newInputValue);
+            }}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            noOptionsText="พิมพ์เพื่อค้นหาลูกค้า..."
+            renderInput={(params) => (
+                <TextField
+                    {...params}
+                    label={
+                        <Box display="flex" alignItems="center" gap={0.5}>
+                            <PersonIcon sx={{ fontSize: 16 }} /> ลูกค้า
+                        </Box>
+                    }
+                    size="small"
+                    fullWidth
+                    sx={{ flex: 1, minWidth: 200 }}
+                />
+            )}
+            sx={{ flex: 1, minWidth: 200 }}
+          />
           
           {(searchTerm || filterStatus !== "all") && (
             <Button variant="outlined" color="inherit" startIcon={<RestartAltIcon />} onClick={handleResetFilter} sx={{ borderColor: "#ddd", color: "#666", whiteSpace: "nowrap" }}>
@@ -271,6 +344,7 @@ const History = () => {
               <TableCell sx={{ color: "white", fontWeight: "bold" }}>เลขที่บิล</TableCell>
               <TableCell sx={{ color: "white", fontWeight: "bold" }}>ยอดสุทธิ</TableCell>
               <TableCell sx={{ color: "white", fontWeight: "bold" }}>ชำระโดย</TableCell>
+              <TableCell sx={{ color: "white", fontWeight: "bold" }}>ลูกค้า</TableCell>
               <TableCell sx={{ color: "white", fontWeight: "bold" }}>สถานะ</TableCell>
               <TableCell align="center" sx={{ color: "white", fontWeight: "bold" }}>จัดการ</TableCell>
             </TableRow>
@@ -279,20 +353,20 @@ const History = () => {
             {filteredOrders.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((order) => (
               <TableRow key={order.id} hover>
                 <TableCell>
-                    <Typography variant="body2" fontWeight="500">
-                        {order.transaction_date?.seconds 
-                            ? dayjs(order.transaction_date.seconds * 1000).format('D MMM BBBB HH:mm') 
-                            : '-'}
-                    </Typography>
+                  <Typography variant="body2" fontWeight="500" noWrap>
+                    {(order.order_date || order.transaction_date)
+                      ? dayjs(order.order_date || order.transaction_date).format('D MMM BBBB HH:mm')
+                      : '-'}
+                  </Typography>
                 </TableCell>
                 <TableCell>
-                    <Typography variant="body2" fontFamily="monospace" fontWeight="700" color="primary">
-                        {order.order_number}
-                    </Typography>
+                  <Typography variant="body2" fontFamily="monospace" fontWeight="700" color="primary">
+                    {order.receipt_no || order.order_number}
+                  </Typography>
                 </TableCell>
                 <TableCell>
                   <Typography variant="body2" fontWeight="bold" sx={{ color: '#2e7d32' }}>
-                    ฿{Number(order.grand_total).toLocaleString()}
+                    ฿{Number(order.net_amount || order.grand_total || 0).toLocaleString()}
                   </Typography>
                 </TableCell>
                 <TableCell>
@@ -303,7 +377,10 @@ const History = () => {
                   />
                 </TableCell>
                 <TableCell>
-                  {renderStatus(order.status)}
+                    <Typography variant="body2" noWrap>{order.customer_name || 'ลูกค้าทั่วไป'}</Typography>
+                </TableCell>
+                <TableCell>
+                  {renderStatus(order.status || 'completed')}
                 </TableCell>
                 <TableCell align="center">
                     <Stack direction="row" spacing={1} justifyContent="center">
@@ -312,22 +389,35 @@ const History = () => {
                                 <VisibilityIcon fontSize="small" />
                             </IconButton>
                         </Tooltip>
-                        <Tooltip title="แก้ไข">
-                            <IconButton size="small" onClick={() => handleEdit(order)} sx={{ color: "#ed6c02", bgcolor: "#fff3e0", '&:hover': { bgcolor: "#ffe0b2" } }}>
-                                <EditOutlinedIcon fontSize="small" />
-                            </IconButton>
+                        <Tooltip title={order.status === 'cancelled' ? "ไม่สามารถแก้ไขรายการที่ยกเลิกแล้ว" : "แก้ไข"}>
+                            <span>
+                                <IconButton 
+                                    size="small" 
+                                    onClick={() => handleEdit(order)} 
+                                    sx={{ color: "#ed6c02", bgcolor: "#fff3e0", '&:hover': { bgcolor: "#ffe0b2" } }}
+                                    disabled={order.status === 'cancelled'}
+                                >
+                                    <EditOutlinedIcon fontSize="small" />
+                                </IconButton>
+                            </span>
                         </Tooltip>
-                        <Tooltip title="ลบรายการ">
-                            <IconButton size="small" onClick={() => handleDeleteClick(order)} sx={{ color: "#ef5350", bgcolor: "#ffebee", '&:hover': { bgcolor: "#ffcdd2" } }}>
-                                <DeleteOutlineIcon fontSize="small" />
-                            </IconButton>
+                        <Tooltip title={order.status === 'cancelled' ? "รายการนี้ถูกยกเลิกแล้ว" : "ยกเลิกรายการ"}>
+                            <span>
+                                <IconButton 
+                                    size="small" 
+                                    onClick={() => handleDeleteClick(order)} 
+                                    sx={{ color: "#ef5350", bgcolor: "#ffebee", '&:hover': { bgcolor: "#ffcdd2" } }} 
+                                    disabled={order.status === 'cancelled'}>
+                                    <DeleteOutlineIcon fontSize="small" />
+                                </IconButton>
+                            </span>
                         </Tooltip>
                     </Stack>
                 </TableCell>
               </TableRow>
             ))}
             {filteredOrders.length === 0 && (
-              <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}><Typography color="text.secondary">ไม่พบรายการคำสั่งซื้อ</Typography></TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6 }}><Typography color="text.secondary">ไม่พบรายการคำสั่งซื้อ</Typography></TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -354,54 +444,72 @@ const History = () => {
                 <Avatar sx={{ bgcolor: 'white', color: '#0288d1' }}><ReceiptLongIcon /></Avatar>
                 <Box>
                     <Typography variant="h6" fontWeight="bold">รายละเอียดคำสั่งซื้อ</Typography>
-                    <Typography variant="body2" sx={{ opacity: 0.9 }}>{selectedOrder?.order_number}</Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.9 }}>{selectedOrder?.receipt_no || selectedOrder?.order_number}</Typography>
                 </Box>
              </Box>
              <IconButton onClick={() => setViewOpen(false)} sx={{ color: 'white' }}><CloseIcon /></IconButton>
         </Box>
 
-        <DialogContent dividers sx={{ p: 3 }}>
-          {selectedOrder && (
-            <Stack spacing={3}>
-              <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 2, border: '1px solid #e0e0e0' }}>
-                  <Grid container spacing={2}>
-                      <Grid item xs={6}><Typography variant="caption" color="text.secondary">วันที่ทำรายการ</Typography><Typography variant="body2" fontWeight="bold">{selectedOrder.transaction_date?.seconds ? dayjs(selectedOrder.transaction_date.seconds * 1000).format('D MMMM BBBB HH:mm') : '-'}</Typography></Grid>
-                      <Grid item xs={6}><Typography variant="caption" color="text.secondary">สถานะ</Typography><Box>{renderStatus(selectedOrder.status)}</Box></Grid>
-                      <Grid item xs={6}><Typography variant="caption" color="text.secondary">วิธีชำระเงิน</Typography><Typography variant="body2">{selectedOrder.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'}</Typography></Grid>
-                  </Grid>
-              </Box>
-              
-              <Box>
-                  <Typography variant="subtitle2" fontWeight="bold" gutterBottom color="primary">รายการสินค้า ({selectedOrder.items?.length || 0})</Typography>
-                  <TableContainer component={Paper} variant="outlined">
-                    <Table size="small">
-                        <TableHead sx={{ bgcolor: '#eee' }}><TableRow><TableCell>สินค้า</TableCell><TableCell align="right">ราคา</TableCell><TableCell align="right">รวม</TableCell></TableRow></TableHead>
-                        <TableBody>
-                            {selectedOrder.items?.map((item, idx) => (
-                                <TableRow key={idx}>
-                                    <TableCell>
-                                        <Typography variant="body2" fontWeight="500">{item.product_name || item.name}</Typography>
-                                        <Typography variant="caption" color="text.secondary">x{item.qty || item.quantity}</Typography>
-                                    </TableCell>
-                                    <TableCell align="right">{Number(item.selling_price || item.price).toLocaleString()}</TableCell>
-                                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>{((item.qty || item.quantity) * (item.selling_price || item.price)).toLocaleString()}</TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                  </TableContainer>
-              </Box>
+        <DialogContent dividers sx={{ p: 0 }}>
+          <Box ref={receiptRef} sx={{ p: 3 }}>
+            {selectedOrder && (
+              <Stack spacing={3}>
+                <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 2, border: '1px solid #e0e0e0' }}>
+                    <Grid container spacing={2} alignItems="center">
+                        <Grid item xs={6}><Typography variant="caption" color="text.secondary">วันที่ทำรายการ</Typography><Typography variant="body2" fontWeight="bold">{(selectedOrder.order_date || selectedOrder.transaction_date) ? dayjs(selectedOrder.order_date || selectedOrder.transaction_date).format('D MMMM BBBB HH:mm') : '-'}</Typography></Grid>
+                        <Grid item xs={6}><Typography variant="caption" color="text.secondary">สถานะ</Typography><Box>{renderStatus(selectedOrder.status || 'completed')}</Box></Grid>
+                        <Grid item xs={6}><Typography variant="caption" color="text.secondary">วิธีชำระเงิน</Typography><Typography variant="body2">{selectedOrder.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'}</Typography></Grid>
+                        <Grid item xs={6}><Typography variant="caption" color="text.secondary">ลูกค้า</Typography><Typography variant="body2" fontWeight="bold">{selectedOrder.customer_name || 'ลูกค้าทั่วไป'}</Typography></Grid>
+                    </Grid>
+                </Box>
+                
+                <Box>
+                    <Typography variant="subtitle2" fontWeight="bold" gutterBottom color="primary">รายการสินค้า ({selectedOrder.items?.length || 0})</Typography>
+                    {selectedOrder.items ? (
+                        <TableContainer component={Paper} variant="outlined">
+                          <Table size="small">
+                              <TableHead sx={{ bgcolor: '#eee' }}><TableRow><TableCell>สินค้า</TableCell><TableCell align="right">ราคา</TableCell><TableCell align="right">รวม</TableCell></TableRow></TableHead>
+                              <TableBody>
+                                  {selectedOrder.items.map((item, idx) => (
+                                      <TableRow key={idx}>
+                                          <TableCell sx={{ borderBottom: 'none' }}>
+                                              <Typography variant="body2" fontWeight="500">{item.product_name}</Typography>
+                                              <Typography variant="caption" color="text.secondary">x{item.quantity} {item.sold_unit_name || ''}</Typography>
+                                          </TableCell>
+                                          <TableCell align="right" sx={{ borderBottom: 'none' }}>{Number(item.unit_price || 0).toLocaleString()}</TableCell>
+                                          <TableCell align="right" sx={{ fontWeight: 'bold', borderBottom: 'none' }}>{Number(item.total_price || 0).toLocaleString()}</TableCell>
+                                      </TableRow>
+                                  ))}
+                              </TableBody>
+                          </Table>
+                        </TableContainer>
+                    ) : (
+                        <Box display="flex" justifyContent="center" alignItems="center" p={3} border="1px dashed #ccc" borderRadius={2}>
+                            <CircularProgress size={24} />
+                        </Box>
+                    )}
+                </Box>
 
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ pt: 2, borderTop: '2px dashed #ccc' }}>
-                  <Typography variant="subtitle1" fontWeight="bold">ยอดรวมสุทธิ</Typography>
-                  <Typography variant="h5" fontWeight="bold" color="success.main">฿{Number(selectedOrder.grand_total).toLocaleString()}</Typography>
+                <Stack spacing={1} sx={{ pt: 2, borderTop: '2px dashed #ccc' }}>
+                    <Box display="flex" justifyContent="space-between"><Typography variant="body2">ยอดรวม</Typography><Typography variant="body2">฿{Number(selectedOrder.total_amount || selectedOrder.subtotal || 0).toLocaleString()}</Typography></Box>
+                    {(Number(selectedOrder.discount_amount || selectedOrder.discount || 0)) > 0 && (
+                      <Box display="flex" justifyContent="space-between" color="error.main">
+                          <Typography variant="body2">ส่วนลด</Typography>
+                          <Typography variant="body2">-฿{Number(selectedOrder.discount_amount || selectedOrder.discount).toLocaleString()}</Typography>
+                      </Box>
+                    )}
+                    <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
+                      <Typography variant="subtitle1" fontWeight="bold">ยอดรวมสุทธิ</Typography>
+                      <Typography variant="h5" fontWeight="bold" color="success.main">฿{Number(selectedOrder.net_amount || selectedOrder.grand_total || 0).toLocaleString()}</Typography>
+                    </Box>
+                </Stack>
               </Stack>
-            </Stack>
-          )}
+            )}
+          </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 2, bgcolor: '#f8f9fa' }}>
-            <Button onClick={() => setViewOpen(false)} sx={{ color: 'text.secondary' }}>ปิดหน้าต่าง</Button>
-            {/* Optional: Add Print Button here */}
+        <DialogActions sx={{ p: 2, bgcolor: '#f8f9fa', borderTop: '1px solid #eee' }}>
+            <Button onClick={() => setViewOpen(false)} sx={{ color: 'text.secondary' }}>ปิด</Button>
+            <Button onClick={handlePrint} variant="contained" startIcon={<PrintIcon />}>พิมพ์ใบเสร็จ</Button>
         </DialogActions>
       </Dialog>
 
@@ -412,7 +520,7 @@ const History = () => {
                 <Avatar sx={{ bgcolor: 'white', color: '#ed6c02' }}><EditOutlinedIcon /></Avatar>
                 <Box>
                     <Typography variant="h6" fontWeight="bold">แก้ไขคำสั่งซื้อ</Typography>
-                    <Typography variant="body2" sx={{ opacity: 0.9 }}>{selectedOrder?.order_number}</Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.9 }}>{selectedOrder?.receipt_no || selectedOrder?.order_number}</Typography>
                 </Box>
              </Box>
              <IconButton onClick={() => setEditOpen(false)} sx={{ color: 'white' }}><CloseIcon /></IconButton>
@@ -421,13 +529,11 @@ const History = () => {
         <DialogContent dividers sx={{ p: 4 }}>
           <Stack spacing={3}>
               <FormControl fullWidth>
-                  <InputLabel>สถานะออเดอร์</InputLabel>
-                  <Select value={editStatus} label="สถานะออเดอร์" onChange={(e) => setEditStatus(e.target.value)}>
-                      <MenuItem value="completed"><Stack direction="row" alignItems="center" spacing={1}><CheckCircleOutlineIcon color="success" fontSize="small"/><span>สำเร็จ (Completed)</span></Stack></MenuItem>
-                      <MenuItem value="pending"><Stack direction="row" alignItems="center" spacing={1}><HourglassEmptyIcon color="warning" fontSize="small"/><span>รอชำระ (Pending)</span></Stack></MenuItem>
-                      <MenuItem value="cancelled"><Stack direction="row" alignItems="center" spacing={1}><CancelOutlinedIcon color="error" fontSize="small"/><span>ยกเลิก (Cancelled)</span></Stack></MenuItem>
-                  </Select>
+                  {/* Status is not in DB, so this field is removed from edit */}
+                  <Typography variant="body2" color="text.secondary">สถานะออเดอร์: {renderStatus(selectedOrder?.status || 'completed')}</Typography>
+                  <Typography variant="caption" color="text.disabled"> (ไม่สามารถแก้ไขสถานะได้จากหน้านี้)</Typography>
               </FormControl>
+              <Divider />
 
               <FormControl fullWidth>
                   <InputLabel>วิธีการชำระเงิน</InputLabel>

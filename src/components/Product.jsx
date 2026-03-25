@@ -22,12 +22,12 @@ import {
   TableHead,
   TableRow,
   Paper,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
   IconButton,
+  Menu,
   Box,
   FormControl,
   InputLabel,
@@ -37,9 +37,12 @@ import {
   InputAdornment,
   Divider,
   Stack,
+  FormHelperText, // ✅ Added FormHelperText for validation messages
   Tooltip,
   Snackbar,
   Alert,
+  Dialog, // Moved Dialog import here to be consistent
+  FormControlLabel, // ✅ Added FormControlLabel import
   Checkbox,
   Grid,
   Pagination,
@@ -81,8 +84,13 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import SaveAsIcon from '@mui/icons-material/SaveAs'; 
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
+import TuneIcon from '@mui/icons-material/Tune'; // New icon for adjustment
 
+import WidgetsIcon from '@mui/icons-material/Widgets';
+import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import ImageIcon from '@mui/icons-material/Image';
 import { visuallyHidden } from "@mui/utils";
+import api from "./api"; // ✅ Fix: Corrected import path
 
 // ================= API CONFIG (แก้ไขแล้ว ✅) =================
 // ดึง Key จากไฟล์ .env อย่างปลอดภัย
@@ -119,10 +127,10 @@ function stableSort(array, comparator) {
 
 // ================= TABLE HEADERS =================
 const headCells = [
-  { id: "barcode", numeric: false, disablePadding: false, label: "BARCODE" },
-  { id: "product_name", numeric: false, disablePadding: false, label: "ชื่อสินค้า" },
-  { id: "Categories_category_id", numeric: false, disablePadding: false, label: "หมวดหมู่" },
-  { id: "selling_price", numeric: true, disablePadding: false, label: "ราคาขาย" },
+  { id: "sku", numeric: false, disablePadding: false, label: "SKU / Barcode" },
+  { id: "product_name", numeric: false, disablePadding: false, label: "ชื่อสินค้า/หน่วย" },
+  { id: "category_name", numeric: false, disablePadding: false, label: "หมวดหมู่" },
+  { id: "selling_price", numeric: true, disablePadding: false, label: "ราคาขาย/ทุน" },
   { id: "stock_quantity", numeric: true, disablePadding: false, label: "คงเหลือ" },
   { id: "status", numeric: true, disablePadding: false, label: "สถานะ" },
   { id: "action", numeric: true, disablePadding: false, label: "Action", disableSort: true },
@@ -135,23 +143,32 @@ const Product = () => {
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // const commonBaseUnits = ["ชิ้น", "ต้น", "ชุด", "กระถาง", "ถุง", "กิโลกรัม", "ลิตร", "เมตร", "อื่นๆ"]; // Removed: No longer needed for TextField
   const initialFormState = {
-    barcode: "",
+    sku: "",
     product_name: "",
-    cost_price: "",
     selling_price: "",
-    location: "",
-    stock_quantity: "",
-    Categories_category_id: "",
+    is_active: true,
+    base_unit: "ชิ้น",
+    category_id: "",
+    // Fields for the initial inventory batch
+    cost_price: "",
+    initial_quantity: "",
+    location_id: "",
+    supplier_id: "",
   };
-
+  
+  // Removed: showCustomBaseUnitInput state as it's no longer needed
   const [form, setForm] = useState(initialFormState);
   const [errors, setErrors] = useState({});
   const [data, setData] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [genPrefix, setGenPrefix] = useState("");
 
-  // --- Filter & Search ---
+  // --- Filter & Search --- 
+  // Removed: showCustomBaseUnitInput state as it's no longer needed
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
@@ -167,6 +184,10 @@ const Product = () => {
   const [editId, setEditId] = useState(null);
   const [openCatModal, setOpenCatModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [openLocModal, setOpenLocModal] = useState(false); // For Location Modal
+  const [newLocationName, setNewLocationName] = useState(""); // For New Location Name
+  const [openSupModal, setOpenSupModal] = useState(false); // For Supplier Modal
+  const [newSupplierName, setNewSupplierName] = useState(""); // For New Supplier Name
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
 
   // --- Transaction History ---
@@ -178,13 +199,21 @@ const Product = () => {
   const [historyPage, setHistoryPage] = useState(0);
   const [historyRowsPerPage, setHistoryRowsPerPage] = useState(5);
   const [historyOrder, setHistoryOrder] = useState('desc');
-  const [historyOrderBy, setHistoryOrderBy] = useState('transaction_date');
+  const [historyOrderBy, setHistoryOrderBy] = useState('created_at');
 
+  const [anchorEl, setAnchorEl] = React.useState(null);
   // --- Barcode & Selection ---
   const [selectedIds, setSelectedIds] = useState([]);
   const [openBarcodeDialog, setOpenBarcodeDialog] = useState(false);
   const [itemsToPrint, setItemsToPrint] = useState([]);
   const componentRef = useRef();
+
+  // --- Stock Adjustment ---
+  const [openAdjustDialog, setOpenAdjustDialog] = useState(false);
+  const [productToAdjust, setProductToAdjust] = useState(null);
+  const [adjustmentForm, setAdjustmentForm] = useState({ change: '', type: 'WASTE', note: '' });
+  const [adjustmentErrors, setAdjustmentErrors] = useState({});
+
 
   // --- AI / Bill Scan ---
   const [openScanDialog, setOpenScanDialog] = useState(false);
@@ -192,6 +221,10 @@ const Product = () => {
   const [scannedItems, setScannedItems] = useState([]);
   const [scannedImage, setScannedImage] = useState(null);
   const [scannedPrefix, setScannedPrefix] = useState("");
+
+  // --- Unit Management ---
+  const [productUnits, setProductUnits] = useState([]);
+  const [newUnit, setNewUnit] = useState({ name: "", rate: "" });
 
   // ================= USE EFFECT =================
   useEffect(() => {
@@ -206,47 +239,73 @@ const Product = () => {
   // ================= LOGIC: FILTER / SEARCH =================
   const fetchData = async () => {
     try {
-      // สมมติว่า Backend ของคุณมี API สำหรับดึงข้อมูลสินค้าและหมวดหมู่
-      const [productsResponse, categoriesResponse] = await Promise.all([
-        fetch("/api/products"), // Endpoint สำหรับดึงสินค้าทั้งหมด
-        fetch("/api/categories"), // Endpoint สำหรับดึงหมวดหมู่ทั้งหมด
+      // ✅ Use the new 'api' utility. It handles tokens and errors automatically.
+      const [productsResponse, categoriesResponse, locationsResponse, suppliersResponse] = await Promise.all([
+        api.get("/products?status=all"), // ✅ FIX: Explicitly fetch all products including inactive ones
+        api.get("/categories"),
+        api.get("/locations"),
+        api.get("/suppliers"),
       ]);
 
-      if (!productsResponse.ok || !categoriesResponse.ok) {
-        throw new Error("Network response was not ok");
-      }
-
-      const productsData = await productsResponse.json();
-      const categoriesData = await categoriesResponse.json();
+      // ✅ Data is directly on `response.data` with axios
+      const productsData = productsResponse.data;
+      const categoriesData = categoriesResponse.data;
+      const locationsData = locationsResponse.data;
+      const suppliersData = suppliersResponse.data;
 
       setData(productsData);
       setCategories(categoriesData);
+      setLocations(locationsData);
+      setSuppliers(suppliersData);
     } catch (error) {
       showSnackbar(`ไม่สามารถโหลดข้อมูลได้: ${error.message}`, "error");
-    } finally {
+    }  finally {
       setLoading(false);
     }
   };
 
   const filteredData = data.filter((item) => {
+    // 1. Filter by Search Term
     const term = searchTerm.toLowerCase();
-    const pName = item.product_name ? item.product_name.toLowerCase() : "";
-    const pBarcode = item.barcode ? item.barcode.toString() : "";
-    const pLoc = item.location ? item.location.toLowerCase() : "";
-
     const matchesSearch =
-      pName.includes(term) || pBarcode.includes(term) || pLoc.includes(term);
-    const matchesCategory = // ปรับตาม schema ใหม่
+      (item.product_name || "").toLowerCase().includes(term) ||
+      (item.sku || "").toLowerCase().includes(term) ||
+      (item.location_name || "").toLowerCase().includes(term);
+
+    // 2. Filter by Category
+    const matchesCategory =
       filterCategory === "all" || item.category_id === filterCategory;
 
-    let matchesStatus = true;
+    // 3. Filter by Status (is_active and stock_quantity)
+    let matchesStatus = true; // Default to true, then apply specific filters
     const qty = parseInt(item.stock_quantity) || 0;
-    if (filterStatus === "out_of_stock") {
-      matchesStatus = qty === 0;
-    } else if (filterStatus === "low_stock") {
-      matchesStatus = qty > 0 && qty < 10;
-    } else if (filterStatus === "in_stock") {
-      matchesStatus = qty >= 10;
+    const isActive = item.is_active === 1;
+
+    if (filterStatus === "all") {
+      // When 'all' is selected, we want to show all products that match search and category,
+      // regardless of their 'is_active' status or stock level.
+      matchesStatus = true; 
+    } else { // Apply specific status filters based on UI selection
+      switch (filterStatus) {
+        case "in_stock":
+          // Show products that are active and have sufficient stock
+          matchesStatus = isActive && qty >= 10;
+          break;
+        case "low_stock":
+          // Show products that are active and have low stock
+          matchesStatus = isActive && qty > 0 && qty < 10;
+          break;
+        case "out_of_stock":
+          // Show products that are active and out of stock
+          matchesStatus = isActive && qty === 0;
+          break;
+        case "disabled":
+          // Show products that are explicitly inactive (is_active = 0)
+          matchesStatus = !isActive;
+          break;
+        default:
+          matchesStatus = true; // Fallback for any unhandled filterStatus, though all should be covered.
+      }
     }
 
     return matchesSearch && matchesCategory && matchesStatus;
@@ -295,20 +354,34 @@ const Product = () => {
 
   const handleGenerateBarcode = () => {
     let randomCode = Math.floor(10000000 + Math.random() * 90000000).toString();
-    setForm({ ...form, barcode: (genPrefix || "") + randomCode });
+    setForm({ ...form, sku: (genPrefix || "") + randomCode });
   };
 
   const handleOpenAdd = () => {
     setEditId(null);
     setForm(initialFormState);
+    setProductUnits([]); // Reset units for new product
+    setNewUnit({ name: '', rate: '' }); // Reset new unit form
     setGenPrefix(""); 
     setErrors({});
     setOpen(true);
   };
 
   const handleOpenEdit = (item) => {
-    setEditId(item.id);
-    setForm(item);
+    setEditId(item.product_id);
+    setForm({
+      sku: item.sku || "",
+      product_name: item.product_name || "",
+      selling_price: item.selling_price || "",
+      is_active: item.is_active === 1, // Convert TINYINT to boolean
+      category_id: item.category_id || "",
+      base_unit: item.base_unit || "ชิ้น",
+      // Non-editable fields (for display only in a more complex UI)
+      cost_price: item.cost_price || "",
+      initial_quantity: item.stock_quantity || "",
+    });
+    setProductUnits(item.units || []); // NEW: Set units for editing
+    setNewUnit({ name: '', rate: '' }); // NEW: Reset new unit form
     setGenPrefix(""); 
     setErrors({});
     setOpen(true);
@@ -317,83 +390,87 @@ const Product = () => {
   const handleSaveProduct = async () => {
     const newErrors = {};
     if (!form.product_name) newErrors.product_name = "กรุณากรอกชื่อสินค้า";
-    if (form.cost_price === "") newErrors.cost_price = "ระบุราคาทุน";
     if (form.selling_price === "") newErrors.selling_price = "ระบุราคาขาย";
-    if (form.stock_quantity === "") newErrors.stock_quantity = "ระบุจำนวน";
+    if (!form.category_id) newErrors.category_id = "กรุณาเลือกหมวดหมู่";
+    if (!form.base_unit) newErrors.base_unit = "กรุณาระบุหน่วยนับหลัก"; // ✅ Add validation for base_unit
+
+    // Validation for new products only
+    if (!editId) {
+      if (form.initial_quantity === "") newErrors.initial_quantity = "ระบุจำนวนเริ่มต้น";
+      if (form.cost_price === "") newErrors.cost_price = "ระบุราคาทุน";
+      if (!form.location_id) newErrors.location_id = "กรุณาเลือกตำแหน่ง";
+      if (!form.supplier_id) newErrors.supplier_id = "กรุณาเลือกผู้จำหน่าย";
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
 
-    const payload = {
-      ...form,
-      cost_price: parseFloat(form.cost_price),
-      selling_price: parseFloat(form.selling_price),
-      stock_quantity: parseInt(form.stock_quantity),
-      // แปลง category_id ให้เป็นตัวเลข ถ้าจำเป็น
-      category_id: form.Categories_category_id,
-    };
-
     try {
       let response;
       if (editId) {
-        // --- UPDATE (PUT request) ---
-        response = await fetch(`/api/products/${editId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        showSnackbar("อัปเดตข้อมูลเรียบร้อยแล้ว", "success");
+        // For UPDATE, only send fields from the 'products' table.
+        const payload = {
+          product_name: form.product_name,
+          sku: form.sku,
+          base_unit: form.base_unit || "ชิ้น",
+          selling_price: parseFloat(form.selling_price),
+          category_id: form.category_id,
+          is_active: form.is_active ? 1 : 0,
+          cost_price: parseFloat(form.cost_price),
+        };
+        response = await api.put(`/products/${editId}`, payload);
       } else {
-        // --- CREATE (POST request) ---
-        response = await fetch("/api/products", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        showSnackbar("เพิ่มสินค้าใหม่เรียบร้อยแล้ว", "success");
+        // For CREATE, send all product and initial batch details.
+        const payload = {
+          ...form,
+          base_unit: form.base_unit || "ชิ้น",
+          cost_price: parseFloat(form.cost_price),
+          selling_price: parseFloat(form.selling_price),
+          initial_quantity: parseInt(form.initial_quantity),
+          units: productUnits, // Send locally managed units
+        };
+        response = await api.post("/products", payload);
       }
 
-      if (!response.ok) throw new Error("Server error");
-
+      // หากสำเร็จ
+      showSnackbar(editId ? "อัปเดตข้อมูลสำเร็จ" : "เพิ่มสินค้าใหม่เรียบร้อยแล้ว", "success");
       await fetchData(); // โหลดข้อมูลใหม่หลังจากการบันทึก
       setForm(initialFormState);
       setOpen(false);
       setEditId(null);
     } catch (err) {
-      console.error(err);
-      showSnackbar("เกิดข้อผิดพลาดในการบันทึกข้อมูล", "error");
+      const errorMessage = err.response?.data?.message || err.message || "เกิดข้อผิดพลาดจากเซิร์ฟเวอร์";
+      showSnackbar(errorMessage, "error");
     }
   };
 
-  const handleDeleteProduct = (id) => {
+  const handleDeleteProduct = async (id) => {
     Swal.fire({
       title: "ยืนยันการลบ?",
-      text: "การลบสินค้านี้จะลบประวัติการทำรายการทั้งหมดด้วย คุณแน่ใจหรือไม่?",
+      text: "การดำเนินการนี้จะลบข้อมูลสินค้าและข้อมูลที่เกี่ยวข้องทั้งหมดออกจากระบบ",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#d33",
       cancelButtonColor: "#3085d6",
-      confirmButtonText: "ลบข้อมูล",
+      confirmButtonText: "ใช่, ลบเลย",
       cancelButtonText: "ยกเลิก",
     }).then(async (result) => {
       if (result.isConfirmed) {
-        setLoading(true);
-        try {
-          const response = await fetch(`/api/products/${id}`, {
-            method: "DELETE",
-          });
 
-          if (!response.ok) {
-            throw new Error("ไม่สามารถลบข้อมูลได้จากเซิร์ฟเวอร์");
-          }
+        // ดำเนินการลบ
+
+        setLoading(true); 
+        try {
+          await api.delete(`/products/${id}`);
 
           await fetchData(); // โหลดข้อมูลใหม่
-          showSnackbar("ลบข้อมูลและประวัติเรียบร้อยแล้ว", "success");
+          showSnackbar("ลบสินค้าเรียบร้อยแล้ว", "success");
         } catch (err) {
-          console.error("Error deleting product:", err);
-          showSnackbar("เกิดข้อผิดพลาด ไม่สามารถลบข้อมูลได้", "error");
+          console.error("Error deleting product:", err); // Log the full error object for better debugging
+          const errorMessage = err.response?.data?.message || "เกิดข้อผิดพลาด ไม่สามารถลบสินค้าได้";
+          showSnackbar(errorMessage, "error");
         } finally {
           setLoading(false);
         }
@@ -404,13 +481,7 @@ const Product = () => {
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
     try {
-      const response = await fetch("/api/categories", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category_name: newCategoryName }),
-      });
-
-      if (!response.ok) throw new Error("Server error");
+      await api.post("/categories", { category_name: newCategoryName });
 
       await fetchData(); // โหลดข้อมูลใหม่
       showSnackbar("เพิ่มหมวดหมู่สำเร็จ", "success");
@@ -418,8 +489,194 @@ const Product = () => {
       setNewCategoryName("");
       setOpenCatModal(false);
     } catch (err) {
-      console.error(err);
-      showSnackbar("เกิดข้อผิดพลาด", "error");
+      const errorMessage = err.response?.data?.message || "เกิดข้อผิดพลาด";
+      showSnackbar(errorMessage, "error");
+    }
+  };
+
+  const handleAddLocation = async () => {
+    if (!newLocationName.trim()) return;
+    try {
+      await api.post("/locations", { location_name: newLocationName });
+
+      await fetchData(); // โหลดข้อมูลใหม่
+      showSnackbar("เพิ่มตำแหน่งเก็บสำเร็จ", "success");
+
+      setNewLocationName("");
+      setOpenLocModal(false);
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || "เกิดข้อผิดพลาดในการเพิ่มตำแหน่งเก็บ";
+      showSnackbar(errorMessage, "error");
+    }
+  };
+
+  // New function to handle status change directly from the dropdown
+  const handleDirectChangeStatus = async (productId, newStatus) => {
+    Swal.fire({
+      title: `ยืนยันการเปลี่ยนสถานะเป็น '${newStatus === 1 ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}'?`,
+      text: `คุณต้องการเปลี่ยนสถานะของสินค้าใช่หรือไม่?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'ใช่, เปลี่ยนเลย!',
+      cancelButtonText: 'ยกเลิก'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        setLoading(true);
+        try {
+          // ✅ FIX: Send a more complete payload to the backend.
+          // This is a workaround for backend APIs that might require more fields for validation on PUT requests.
+          const productToUpdate = data.find(p => p.product_id === productId);
+          if (!productToUpdate) {
+            throw new Error("ไม่พบข้อมูลสินค้าที่ต้องการอัปเดต");
+          }
+
+          // Construct a payload with fields the backend likely expects, similar to the main edit form.
+          const payload = {
+            product_name: productToUpdate.product_name,
+            sku: productToUpdate.sku,
+            base_unit: productToUpdate.base_unit,
+            selling_price: productToUpdate.selling_price,
+            category_id: productToUpdate.category_id,
+            cost_price: productToUpdate.cost_price,
+            is_active: newStatus, // The only value that is actually changing.
+          };
+
+          await api.put(`/products/${productId}`, payload);
+          await fetchData(); 
+          showSnackbar(`เปลี่ยนสถานะเป็น '${newStatus === 1 ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}' สำเร็จ`, 'success');
+        } catch (error) {
+          console.error("Error updating product status:", error);
+          showSnackbar(`ไม่สามารถเปลี่ยนสถานะได้: ${error.response?.data?.message || error.message || "เกิดข้อผิดพลาด"}`, 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+  };
+
+  // Remove these as they are no longer needed
+  // const handleOpenStatusMenu = (event, item) => { ... };
+  // const handleCloseStatusMenu = () => { ... };
+  // const const openStatusMenu = Boolean(anchorEl);
+
+  const handleAddSupplier = async () => {
+    if (!newSupplierName.trim()) return;
+    try {
+      await api.post("/suppliers", { supplier_name: newSupplierName });
+
+      await fetchData(); // โหลดข้อมูลใหม่
+      showSnackbar("เพิ่มผู้จำหน่ายสำเร็จ", "success");
+      setNewSupplierName("");
+      setOpenSupModal(false);
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || "เกิดข้อผิดพลาดในการเพิ่มผู้จำหน่าย";
+      showSnackbar(errorMessage, "error");
+    }
+  };
+
+  const handleAddUnit = async () => {
+    if (!newUnit.name.trim() || !newUnit.rate || parseInt(newUnit.rate) <= 1) {
+        showSnackbar("กรุณากรอกชื่อหน่วยและจำนวนให้ครบถ้วน", "error");
+        return;
+    }
+
+    // If in EDIT mode, call API directly
+    if (editId) {
+        try {
+            const response = await api.post(`/products/${editId}/units`, {
+                unit_name: newUnit.name,
+                conversion_rate: parseInt(newUnit.rate)
+            });
+
+            const newUnitData = response.data;
+            setProductUnits([...productUnits, {
+                unit_id: newUnitData.unit_id,
+                unit_name: newUnit.name,
+                conversion_rate: parseInt(newUnit.rate)
+            }]);
+            setNewUnit({ name: '', rate: '' });
+            showSnackbar("เพิ่มหน่วยย่อยสำเร็จ", "success");
+            fetchData();
+        } catch (error) {
+            const errorMessage = error.response?.data?.message || "เกิดข้อผิดพลาดในการเพิ่มหน่วยย่อย";
+            showSnackbar(errorMessage, "error");
+            console.error(error);
+        }
+    } else { // If in ADD mode, update local state only
+        setProductUnits([...productUnits, {
+            // No unit_id yet, it will be created on the backend
+            unit_name: newUnit.name,
+            conversion_rate: parseInt(newUnit.rate)
+        }]);
+        setNewUnit({ name: '', rate: '' }); // Clear form
+    }
+  };
+
+  const handleDeleteUnit = async (unitId, index) => {
+    // If in EDIT mode and unit has a database ID, call API
+    if (editId && unitId) {
+        Swal.fire({
+            title: 'ยืนยันการลบ?', text: "คุณต้องการลบหน่วยย่อยนี้ใช่หรือไม่?", icon: 'warning',
+            showCancelButton: true, confirmButtonColor: '#d33', cancelButtonText: 'ยกเลิก'
+        }).then(async (result) => {
+            if (result.isConfirmed) {
+                try {
+                    await api.delete(`/products/units/${unitId}`);
+                    setProductUnits(productUnits.filter(u => u.unit_id !== unitId));
+                    showSnackbar("ลบหน่วยย่อยสำเร็จ", "success");
+                    fetchData();
+                } catch (error) { 
+                    showSnackbar("เกิดข้อผิดพลาดในการลบหน่วยย่อย", "error"); 
+                }
+            }
+        });
+    } else { // If in ADD mode, just remove from local state by index
+        const updatedUnits = [...productUnits];
+        updatedUnits.splice(index, 1);
+        setProductUnits(updatedUnits);
+    }
+  };
+
+  const handleOpenAdjustDialog = (product) => {
+    setProductToAdjust(product);
+    setAdjustmentForm({ change: '', type: 'WASTE', note: '' });
+    setAdjustmentErrors({});
+    setOpenAdjustDialog(true);
+  };
+
+  const handleSaveAdjustment = async () => {
+    const { change, type, note } = adjustmentForm;
+    const newErrors = {};
+    const changeValue = parseInt(change, 10);
+
+    if (!Number.isInteger(changeValue) || changeValue === 0) {
+      newErrors.change = "กรุณาระบุจำนวนที่เปลี่ยนแปลง (ต้องไม่ใช่ 0)";
+    }
+    if (changeValue < 0 && Math.abs(changeValue) > (productToAdjust?.stock_quantity || 0)) {
+      newErrors.change = `ไม่สามารถหักสต็อกเกินจำนวนที่มี (มีอยู่ ${productToAdjust.stock_quantity})`;
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setAdjustmentErrors(newErrors);
+      return;
+    }
+
+    try {
+      await api.post('/stock/adjust', {
+        product_id: productToAdjust.product_id,
+        change: changeValue,
+        type: type,
+        note: note,
+      });
+      showSnackbar("ปรับสต็อกสำเร็จ", "success");
+      setOpenAdjustDialog(false);
+      await fetchData();
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || "เกิดข้อผิดพลาดในการปรับสต็อก";
+      showSnackbar(errorMessage, "error");
+      console.error("Stock adjustment error:", error);
     }
   };
 
@@ -434,14 +691,12 @@ const Product = () => {
     setHistoryLoading(true);
 
     try {
-      const response = await fetch(`/api/products/${item.id}/history`);
-      if (!response.ok) {
-        throw new Error("Could not fetch history");
-      }
-      const historyLogs = await response.json();
+      const response = await api.get(`/products/${item.product_id}/history`);
+      const historyLogs = response.data;
       setHistoryData(historyLogs);
     } catch (error) {
       console.error("Error fetching history:", error);
+      showSnackbar("ไม่สามารถดึงข้อมูลประวัติได้", "error");
     } finally {
         setHistoryLoading(false); 
     }
@@ -471,8 +726,8 @@ const Product = () => {
   const filteredHistoryData = historyData.filter((log) => {
     let matchDate = true;
     if (historyFilterDate) {
-        const logDate = log.transaction_date 
-            ? new Date(log.transaction_date.seconds * 1000).toISOString().split('T')[0] 
+        const logDate = log.created_at
+            ? new Date(log.created_at).toISOString().split('T')[0] // Use created_at for filtering
             : "";
         matchDate = logDate === historyFilterDate;
     }
@@ -493,16 +748,26 @@ const Product = () => {
 
   const getCategoryName = (catId) => {
     const cat = categories.find((c) => c.id === catId);
-    return cat ? cat.category_name : <span style={{ color: "#999", fontStyle: "italic" }}>ไม่ระบุ</span>; // ปรับ field เป็น category_name
+    return cat ? cat.category_name : <span style={{ color: "#999", fontStyle: "italic" }}>ไม่ระบุ</span>;
   };
 
-  const getStockStatus = (qty) => {
-    const q = parseInt(qty);
-    if (q === 0) return <Chip label="หมดสต็อก" color="error" size="small" variant="outlined" />;
-    if (q < 10) return <Chip label="ใกล้หมด" color="warning" size="small" variant="outlined" />;
+  const renderCombinedStatus = (item) => {
+    const qty = parseInt(item.stock_quantity);
+    const isActive = item.is_active === 1;
+
+    if (!isActive) {
+        return <Chip label="ปิดใช้งาน" color="error" size="small" />;
+    }
+
+    // If active, show stock status
+    if (qty === 0) {
+        return <Chip label="หมดสต็อก" color="error" size="small" variant="outlined" />;
+    }
+    if (qty < 10) {
+        return <Chip label="ใกล้หมด" color="warning" size="small" variant="outlined" />;
+    }
     return <Chip label="พร้อมขาย" color="success" size="small" variant="outlined" />;
   };
-
   const handleResetFilter = () => {
     setSearchTerm("");
     setFilterStatus("all");
@@ -512,7 +777,7 @@ const Product = () => {
 
   const handleSelectAll = (event) => {
     if (event.target.checked) {
-      const newSelecteds = visibleRows.map((n) => n.id);
+      const newSelecteds = visibleRows.map((n) => n.product_id);
       setSelectedIds(newSelecteds);
     } else {
       setSelectedIds([]);
@@ -535,7 +800,7 @@ const Product = () => {
   };
 
   const handleOpenMultipleBarcode = () => {
-    const targets = data.filter((item) => selectedIds.includes(item.id));
+    const targets = data.filter((item) => selectedIds.includes(item.product_id));
     setItemsToPrint(targets);
     setOpenBarcodeDialog(true);
   };
@@ -558,7 +823,7 @@ const Product = () => {
 
   const analyzeBillImage = async (file) => {
     try {
-        if (!API_KEY) {
+        if (!API_KEY) { // Check for API_KEY
             throw new Error("ไม่พบ API Key กรุณาตรวจสอบไฟล์ .env");
         }
 
@@ -567,14 +832,14 @@ const Product = () => {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         const prompt = `
-          Task: Analyze this receipt/bill image and extract product items.
-          Context: You are an inventory assistant for a Thai shop.
+          Task: Analyze this receipt image and extract product items.
+          Context: You are an inventory assistant for a Thai shop. The schema has product_name, sku, selling_price, cost_price, and initial_quantity.
           Instructions:
-          1. Extract: product_name (Thai), selling_price (number), cost_price (number, if missing assume 70% of selling price), stock_quantity (number, default 1).
-          2. Generate: A random 8-digit 'barcode' for each item.
+          1. Extract: 'product_name' (in Thai), 'selling_price' (number), 'cost_price' (number, if missing assume 70% of selling_price), and 'initial_quantity' (number, default to 1).
+          2. Generate: A random 8-digit 'sku' for each item.
           3. Format: Return ONLY a raw JSON array of objects. No markdown formatting.
           4. Clean up names: Remove text like 'pcs', 'ea', prices in name.
-          Example Output: [{"product_name":"Lay Chips", "selling_price":30, "cost_price":20, "stock_quantity":2, "barcode":"12345678"}]
+          Example Output: [{"product_name":"Lay Chips", "selling_price":30, "cost_price":21, "initial_quantity":2, "sku":"12345678"}]
         `;
 
         const imagePart = await fileToGenerativePart(file);
@@ -589,7 +854,7 @@ const Product = () => {
 
     } catch (error) {
         console.error("Gemini AI Error:", error);
-        throw error;
+        throw error; // Re-throw error for handling in handleUploadBill
     }
   };
 
@@ -607,8 +872,10 @@ const Product = () => {
           
           const formattedItems = items.map(item => ({
               ...item,
-              Categories_category_id: categories.length > 0 ? categories[0].id : "",
-              location: "Store" // Default location
+              // Map AI output to our form state names
+              category_id: categories.length > 0 ? categories[0].id : "",
+              location_id: locations.length > 0 ? locations[0].id : "",
+              supplier_id: suppliers.length > 0 ? suppliers[0].id : "",
           }));
           
           setScannedItems(formattedItems);
@@ -618,7 +885,7 @@ const Product = () => {
           console.error("AI Error", error);
           let errMsg = error.message;
           if(errMsg.includes("404")) errMsg = "ไม่พบโมเดล AI (กรุณาตรวจสอบชื่อรุ่นโมเดล)";
-          showSnackbar(`เกิดข้อผิดพลาด: ${errMsg}`, "error");
+          showSnackbar(`เกิดข้อผิดพลาด: ${errMsg}`, "error"); // Show error message
       } finally {
           setIsScanning(false);
       }
@@ -626,16 +893,16 @@ const Product = () => {
 
   const handleScannedItemChange = (index, field, value) => {
       const updated = [...scannedItems];
-      updated[index][field] = value;
+      updated[index][field] = value; // e.g., updated[0]['product_name'] = 'New Name'
       setScannedItems(updated);
   };
 
   // ✅ NEW: Generate Random Barcode for specific item
   const handleGenerateBarcodeForScannedItem = (index) => {
-      let randomCode = Math.floor(10000000 + Math.random() * 90000000).toString();
+      const randomCode = Math.floor(10000000 + Math.random() * 90000000).toString();
       // ใช้ Prefix ที่ตั้งไว้ด้านบนมารวมด้วย
       const finalCode = (scannedPrefix || "").trim() + randomCode;
-      handleScannedItemChange(index, 'barcode', finalCode);
+      handleScannedItemChange(index, 'sku', finalCode);
   };
 
   const handleRemoveScannedItem = (index) => {
@@ -647,21 +914,12 @@ const Product = () => {
   const handleSaveScannedItems = async () => {
     setLoading(true);
     try {
-        const response = await fetch('/api/products/batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                products: scannedItems.map(item => ({
-                    ...item,
-                    category_id: item.Categories_category_id
-                }))
-            })
+        await api.post('/products/batch', {
+            products: scannedItems.map(item => ({
+                ...item,
+                category_id: item.category_id
+            }))
         });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || "Server error during batch import");
-        }
 
         showSnackbar(`นำเข้าสินค้าสำเร็จ ${scannedItems.length} รายการ`, "success");
         setOpenScanDialog(false);
@@ -672,8 +930,8 @@ const Product = () => {
         await fetchData(); // โหลดข้อมูลใหม่ทั้งหมด
 
     } catch (error) {
-        console.error("Batch Import Error:", error);
-        showSnackbar("เกิดข้อผิดพลาดในการนำเข้าสินค้า", "error");
+        const errorMessage = error.response?.data?.message || "เกิดข้อผิดพลาดในการนำเข้าสินค้า";
+        showSnackbar(errorMessage, "error");
     } finally {
         setLoading(false);
     }
@@ -843,6 +1101,7 @@ const Product = () => {
               <MenuItem value="in_stock">✅ พร้อมขาย</MenuItem>
               <MenuItem value="low_stock">⚠️ ใกล้หมด</MenuItem>
               <MenuItem value="out_of_stock">❌ หมดสต็อก</MenuItem>
+              <MenuItem value="disabled">🚫 ปิดใช้งาน</MenuItem>
             </Select>
           </FormControl>
           {(searchTerm ||
@@ -928,10 +1187,10 @@ const Product = () => {
           <TableBody>
             {visibleRows.length > 0 ? (
               visibleRows.map((item) => {
-                const isSelected = selectedIds.indexOf(item.id) !== -1;
+                  const isSelected = selectedIds.indexOf(item.product_id) !== -1;
                 return (
                   <TableRow
-                    key={item.id}
+                    key={item.product_id}
                     hover
                     selected={isSelected}
                     sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
@@ -940,7 +1199,7 @@ const Product = () => {
                       <Checkbox
                         color="success"
                         checked={isSelected}
-                        onChange={(event) => handleSelectOne(event, item.id)}
+                        onChange={(event) => handleSelectOne(event, item.product_id)}
                       />
                     </TableCell>
                     <TableCell>
@@ -951,12 +1210,11 @@ const Product = () => {
                             color="primary"
                             onClick={() => handleOpenSingleBarcode(item)}
                           >
-                            {" "}
-                            <QrCodeIcon fontSize="small" />{" "}
+                            <QrCodeIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Typography variant="body2" fontFamily="monospace">
-                          {item.barcode}
+                          {item.sku || "-"}
                         </Typography>
                       </Box>
                     </TableCell>
@@ -964,28 +1222,29 @@ const Product = () => {
                       <Typography variant="subtitle2" fontWeight="bold">
                         {item.product_name}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Zone: {item.location || "-"}
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                        <LocationOnIcon sx={{ fontSize: '0.8rem', verticalAlign: 'middle' }} /> {item.location_name || "-"}
+                      </Typography>
+                      <Typography variant="caption" color="primary.main" display="block" sx={{ mt: 0.5 }}>
+                        หน่วย: {item.base_unit}{item.units?.length > 0 ? `, ${item.units.map(u => u.unit_name).join(', ')}` : ''}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={getCategoryName(item.category_id)}
+                        label={item.category_name || getCategoryName(item.category_id)}
                         size="small"
                         sx={{ bgcolor: "#e3f2fd", color: "#1565c0" }}
                       />
                     </TableCell>
                     <TableCell align="right">
-                      <Typography fontWeight="bold" color="success.main">
-                        ฿{Number(item.selling_price).toLocaleString()}
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        display="block"
-                      >
-                        ทุน: {Number(item.cost_price).toLocaleString()}
-                      </Typography>
+                      <Box display="flex" flexDirection="column" alignItems="flex-end">
+                        <Typography variant="caption" color="text.secondary">
+                          ทุน: ฿{Number(item.cost_price || 0).toLocaleString()}
+                        </Typography>
+                        <Typography fontWeight="bold" color="success.main">
+                          ขาย: ฿{Number(item.selling_price).toLocaleString()}
+                        </Typography>
+                      </Box>
                     </TableCell>
                     <TableCell align="right">
                       <Typography
@@ -997,7 +1256,31 @@ const Product = () => {
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
-                      {getStockStatus(item.stock_quantity)}
+                      <FormControl size="small" sx={{ minWidth: 120 }}>
+                        <Select
+                          value={item.is_active === 1 ? 'active' : 'inactive'}
+                          onChange={(e) => handleDirectChangeStatus(item.product_id, e.target.value === 'active' ? 1 : 0)}
+                          displayEmpty
+                          renderValue={() => renderCombinedStatus(item)}
+                          inputProps={{ 'aria-label': 'Select status' }}
+                          sx={{
+                            height: 40,
+                            '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                            '& .MuiSelect-select': {
+                              p: '6px 8px',
+                              bgcolor: 'transparent',
+                              '&:focus': { bgcolor: 'transparent' },
+                            },
+                          }}
+                        >
+                          <MenuItem value="active">
+                            <Chip label="เปิดใช้งาน" color="success" size="small" variant="outlined" />
+                          </MenuItem>
+                          <MenuItem value="inactive">
+                            <Chip label="ปิดใช้งาน" color="error" size="small" variant="outlined" />
+                          </MenuItem>
+                        </Select>
+                      </FormControl>
                     </TableCell>
                     <TableCell align="right">
                       <Stack
@@ -1005,6 +1288,19 @@ const Product = () => {
                         spacing={1}
                         justifyContent="flex-end"
                       >
+                        <Tooltip title="ปรับสต็อก">
+                          <IconButton
+                            size="small"
+                            sx={{
+                              color: theme.palette.primary.main,
+                              bgcolor: theme.palette.action.hover,
+                              "&:hover": { bgcolor: theme.palette.action.selected },
+                            }}
+                            onClick={() => handleOpenAdjustDialog(item)}
+                          >
+                            <TuneIcon />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="ประวัติสต็อก">
                           <IconButton
                             size="small"
@@ -1027,28 +1323,24 @@ const Product = () => {
                               "&:hover": { bgcolor: "#ffe0b2" },
                             }}
                             onClick={() => handleOpenEdit(item)}
-                          >
-                            {" "}
-                            <EditOutlinedIcon />{" "}
+                          ><EditOutlinedIcon />
                           </IconButton>
                         </Tooltip>
-                        <Tooltip title="ลบข้อมูล">
+                        <Tooltip title="ลบสินค้า">
                           <IconButton
                             size="small"
                             sx={{
-                              color: "#ef5350",
+                              color: "#d33",
                               bgcolor: "#ffebee",
                               "&:hover": { bgcolor: "#ffcdd2" },
                             }}
-                            onClick={() => handleDeleteProduct(item.id)}
-                          >
-                            {" "}
-                            <DeleteOutlineIcon />{" "}
-                          </IconButton>
+                            onClick={() => handleDeleteProduct(item.product_id)}
+                          ><DeleteOutlineIcon /></IconButton>
                         </Tooltip>
+                        {/* Removed the commented-out status change Tooltip and Menu to fix JSX error */}
                       </Stack>
                     </TableCell>
-                  </TableRow>
+                  </TableRow>                  
                 );
               })
             ) : (
@@ -1124,6 +1416,63 @@ const Product = () => {
           />
         </Box>
       </TableContainer>
+
+      {/* --- DIALOG: STOCK ADJUSTMENT --- */}
+      <Dialog open={openAdjustDialog} onClose={() => setOpenAdjustDialog(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ bgcolor: 'primary.main', color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <TuneIcon />
+          ปรับสต็อกสินค้า
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 3 }}>
+          {productToAdjust && (
+            <Stack spacing={3}>
+              <Box>
+                <Typography variant="h6" fontWeight="bold">{productToAdjust.product_name}</Typography>
+                <Typography color="text.secondary" component="div">
+                  สต็อกปัจจุบัน: <Chip label={productToAdjust.stock_quantity} color="primary" size="small" />
+                </Typography>
+              </Box>
+              <TextField
+                label="จำนวนที่เปลี่ยนแปลง"
+                type="number"
+                value={adjustmentForm.change}
+                onChange={(e) => setAdjustmentForm({ ...adjustmentForm, change: e.target.value })}
+                error={!!adjustmentErrors.change}
+                helperText={adjustmentErrors.change || "ใส่ค่าบวกเพื่อเพิ่มสต็อก, ค่าลบเพื่อลดสต็อก"}
+                fullWidth
+                autoFocus
+              />
+              <FormControl fullWidth>
+                <InputLabel>ประเภทรายการ</InputLabel>
+                <Select
+                  value={adjustmentForm.type}
+                  label="ประเภทรายการ"
+                  onChange={(e) => setAdjustmentForm({ ...adjustmentForm, type: e.target.value })}
+                >
+                  <MenuItem value="WASTE">ของเสีย / หมดอายุ</MenuItem>
+                  <MenuItem value="ADJUST">ตรวจนับสต็อก</MenuItem>
+                  <MenuItem value="RETURN">ลูกค้านำมาคืน</MenuItem>
+                  <MenuItem value="RETURN">แถมให้ลูกค้า</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                label="หมายเหตุ (ถ้ามี)"
+                value={adjustmentForm.note}
+                onChange={(e) => setAdjustmentForm({ ...adjustmentForm, note: e.target.value })}
+                fullWidth
+                multiline
+                rows={2}
+              />
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setOpenAdjustDialog(false)}>ยกเลิก</Button>
+          <Button onClick={handleSaveAdjustment} variant="contained" color="primary">
+            บันทึกการปรับสต็อก
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* --- DIALOG: SCAN BILL (AI IMPORT - PROFESSIONAL UI) --- */}
       <Dialog 
@@ -1206,7 +1555,7 @@ const Product = () => {
                 // --- STAGE 3: REVIEW (Split Layout Professional) ---
                 <Grid container sx={{ height: '100%' }}>
                     {/* Left Panel: Image Preview (Sticky) */}
-                    <Grid item size={{ xs: 12, md: 4, lg: 3 }} sx={{ borderRight: '1px solid #e0e0e0', bgcolor: 'white', display: 'flex', flexDirection: 'column' }}>
+                    <Grid item xs={12} md={4} lg={3} sx={{ borderRight: '1px solid #e0e0e0', bgcolor: 'white', display: 'flex', flexDirection: 'column' }}>
                         <Box p={2} borderBottom="1px solid #eee">
                             <Typography variant="subtitle2" color="text.secondary" fontWeight="bold">
                                 <PhotoLibraryIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 1 }} />
@@ -1230,7 +1579,7 @@ const Product = () => {
                     </Grid>
                     
                     {/* Right Panel: Form Data (Card List) */}
-                    <Grid item size={{ xs: 12, md: 8, lg: 9 }} sx={{ bgcolor: '#f4f6f8', height: '100%', overflowY: 'auto', p: 3 }}>
+                    <Grid item xs={12} md={8} lg={9} sx={{ bgcolor: '#f4f6f8', height: '100%', overflowY: 'auto', p: 3 }}>
                          {/* Header: Title + Add Category */}
                          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
                             <Typography variant="h6" color="text.primary" fontWeight="bold">
@@ -1281,20 +1630,22 @@ const Product = () => {
                                                  </Box>
                                             </Grid>
 
-                                            <Grid item size={{ xs: 12, md: 5 }}>
+                                            <Grid item xs={12} md={5}>
                                                 <TextField
                                                     label="ชื่อสินค้า"
                                                     value={item.product_name}
                                                     onChange={(e) => handleScannedItemChange(index, 'product_name', e.target.value)}
-                                                    fullWidth size="small" variant="outlined"
+                                                    fullWidth
+                                                    size="small"
+                                                    variant="outlined"
                                                     InputProps={{ sx: { fontWeight: 'bold' } }}
                                                 />
                                             </Grid>
-                                             <Grid item size={{ xs: 12, md: 3 }}>
+                                             <Grid item xs={12} md={3}>
                                                 <TextField
-                                                    label="Barcode"
-                                                    value={item.barcode}
-                                                    onChange={(e) => handleScannedItemChange(index, 'barcode', e.target.value)}
+                                                    label="SKU / Barcode"
+                                                    value={item.sku}
+                                                    onChange={(e) => handleScannedItemChange(index, 'sku', e.target.value)}
                                                     fullWidth size="small" variant="outlined"
                                                     InputProps={{ 
                                                         startAdornment: <InputAdornment position="start"><QrCodeIcon fontSize="small" /></InputAdornment>,
@@ -1311,13 +1662,13 @@ const Product = () => {
                                                     }}
                                                 />
                                             </Grid>
-                                            <Grid item size={{ xs: 12, md: 3 }}>
+                                            <Grid item xs={12} md={3}>
                                                 <FormControl fullWidth size="small">
                                                     <InputLabel>หมวดหมู่</InputLabel>
                                                     <Select
-                                                        value={item.Categories_category_id}
+                                                        value={item.category_id}
                                                         label="หมวดหมู่"
-                                                        onChange={(e) => handleScannedItemChange(index, 'Categories_category_id', e.target.value)}
+                                                        onChange={(e) => handleScannedItemChange(index, 'category_id', e.target.value)}
                                                     >
                                                         {categories.map((cat) => (
                                                             <MenuItem key={cat.id} value={cat.id}>{cat.category_name}</MenuItem>
@@ -1327,46 +1678,54 @@ const Product = () => {
                                             </Grid>
 
                                             {/* Row 2: Details */}
-                                             <Grid item size={{ xs: 12, md: 1 }}></Grid> {/* Spacer */}
-                                             <Grid item size={{ xs: 6, md: 2 }}>
+                                             <Grid item xs={12} md={1}></Grid> {/* Spacer */}
+                                             <Grid item xs={6} md={2}>
                                                 <TextField 
                                                     label="ทุน"
                                                     type="number"
                                                     value={item.cost_price}
                                                     onChange={(e) => handleScannedItemChange(index, 'cost_price', e.target.value)}
-                                                    fullWidth size="small" variant="outlined"
+                                                    fullWidth
+                                                    size="small"
+                                                    variant="outlined"
                                                     InputProps={{ startAdornment: <InputAdornment position="start">฿</InputAdornment> }}
                                                 />
                                             </Grid>
-                                            <Grid item size={{ xs: 6, md: 2 }}>
+                                            <Grid item xs={6} md={2}>
                                                 <TextField 
                                                     label="ราคาขาย"
                                                     type="number"
                                                     value={item.selling_price}
                                                     onChange={(e) => handleScannedItemChange(index, 'selling_price', e.target.value)}
-                                                    fullWidth size="small" variant="outlined"
+                                                    fullWidth
+                                                    size="small"
+                                                    variant="outlined"
                                                     InputProps={{ startAdornment: <InputAdornment position="start">฿</InputAdornment> }}
                                                 />
                                             </Grid>
-                                            <Grid item size={{ xs: 6, md: 2 }}>
+                                            <Grid item xs={6} md={2}>
                                                 <TextField 
                                                     label="จำนวน"
                                                     type="number"
-                                                    value={item.stock_quantity}
-                                                    onChange={(e) => handleScannedItemChange(index, 'stock_quantity', e.target.value)}
-                                                    fullWidth size="small" variant="outlined"
+                                                    value={item.initial_quantity}
+                                                    onChange={(e) => handleScannedItemChange(index, 'initial_quantity', e.target.value)}
+                                                    fullWidth
+                                                    size="small"
+                                                    variant="outlined"
                                                 />
                                             </Grid>
-                                            <Grid item size={{ xs: 6, md: 2 }}>
+                                            <Grid item xs={6} md={2}>
                                                  <TextField 
                                                     label="ตำแหน่งเก็บ"
-                                                    value={item.location}
-                                                    onChange={(e) => handleScannedItemChange(index, 'location', e.target.value)}
-                                                    fullWidth size="small" variant="outlined"
+                                                    value={item.location_id}
+                                                    onChange={(e) => handleScannedItemChange(index, 'location_id', e.target.value)}
+                                                    fullWidth
+                                                    size="small"
+                                                    variant="outlined"
                                                     InputProps={{ startAdornment: <InputAdornment position="start"><LocationOnIcon fontSize="small" color="disabled" /></InputAdornment> }}
                                                 />
                                             </Grid>
-                                            <Grid item size={{ xs: 12, md: 1 }} display="flex" justifyContent="flex-end">
+                                            <Grid item xs={12} md={1} display="flex" justifyContent="flex-end">
                                                 <Tooltip title="ลบรายการนี้">
                                                     <IconButton color="error" onClick={() => handleRemoveScannedItem(index)}>
                                                         <DeleteOutlineIcon />
@@ -1411,8 +1770,8 @@ const Product = () => {
             <Box display="flex" alignItems="center" gap={2}>
                 <Avatar sx={{ bgcolor: 'white', color: 'success.main' }}><HistoryIcon /></Avatar>
                 <Box>
-                    <Typography variant="h6" fontWeight="bold">ประวัติการทำรายการ</Typography>
-                    <Typography variant="body2" sx={{ opacity: 0.9 }}>{selectedProductHistory?.product_name} ({selectedProductHistory?.barcode})</Typography>
+                    <Typography variant="h6" fontWeight="bold">ประวัติการทำรายการ "{selectedProductHistory?.product_name}"</Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.9 }}>รหัสสินค้า : {selectedProductHistory?.sku} </Typography>
                 </Box>
             </Box>
             <IconButton onClick={() => setOpenHistoryDialog(false)} sx={{ color: 'white' }}>
@@ -1481,10 +1840,10 @@ const Product = () => {
                   <TableHead>
                     <TableRow>
                       <TableCell>
-                          <TableSortLabel
-                            active={historyOrderBy === 'transaction_date'}
-                            direction={historyOrderBy === 'transaction_date' ? historyOrder : 'asc'}
-                            onClick={(event) => handleRequestHistorySort(event, 'transaction_date')}
+                          <TableSortLabel // ✅ FIX: Sort by 'created_at' which is the actual field from the DB
+                            active={historyOrderBy === 'created_at'}
+                            direction={historyOrderBy === 'created_at' ? historyOrder : 'asc'}
+                            onClick={(event) => handleRequestHistorySort(event, 'created_at')}
                           >
                               วันที่/เวลา
                           </TableSortLabel>
@@ -1499,16 +1858,16 @@ const Product = () => {
                               เปลี่ยนแปลง
                           </TableSortLabel>
                       </TableCell>
-                      <TableCell align="right">คงเหลือ</TableCell>
                       <TableCell align="right">ราคา(ทุน/ขาย)</TableCell>
+                      <TableCell>ผู้ทำรายการ</TableCell>
                       <TableCell>หมายเหตุ</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {visibleHistoryRows.length > 0 ? (
                       visibleHistoryRows.map((log) => {
-                        const date = log.transaction_date
-                          ? new Date(log.transaction_date.seconds * 1000).toLocaleString("th-TH")
+                        const date = log.created_at // Use created_at from MySQL
+                          ? new Date(log.created_at).toLocaleString("th-TH")
                           : "-";
                         const isPositive = log.quantity_change > 0;
                         const isPriceChange = log.transaction_type === "price_change";
@@ -1560,9 +1919,6 @@ const Product = () => {
                             >
                               {(isEditInfo || isPriceChange) ? "-" : isPositive ? `+${log.quantity_change}` : log.quantity_change}
                             </TableCell>
-                            <TableCell align="right" sx={{ fontWeight: "bold" }}>
-                              {log.current_stock}
-                            </TableCell>
                             <TableCell align="right" sx={{ fontSize: "0.8rem", color: "#666" }}>
                               <Box display="flex" flexDirection="column" alignItems="flex-end">
                                 <span style={{ color: isPriceChange ? '#ed6c02' : 'inherit', fontWeight: isPriceChange ? 'bold' : 'normal' }}>
@@ -1572,6 +1928,9 @@ const Product = () => {
                                     / ฿{Number(log.selling_price).toLocaleString()}
                                 </span>
                               </Box>
+                            </TableCell>
+                            <TableCell sx={{ color: "text.secondary", fontSize: "0.85rem" }}>
+                              {log.username || 'N/A'}
                             </TableCell>
                             <TableCell sx={{ color: "text.secondary", fontSize: "0.85rem", maxWidth: 150 }}>
                               {log.note}
@@ -1642,7 +2001,7 @@ const Product = () => {
                   xs={12}
                   sm={6}
                   md={4}
-                  key={item.id}
+                  key={item.product_id}
                   sx={{ textAlign: "center", pageBreakInside: "avoid" }}
                 >
                   <Box
@@ -1662,9 +2021,9 @@ const Product = () => {
                     >
                       {item.product_name}
                     </Typography>
-                    {item.barcode ? (
+                    {item.sku ? (
                       <Barcode
-                        value={item.barcode}
+                        value={item.sku}
                         width={1.5}
                         height={50}
                         fontSize={14}
@@ -1757,7 +2116,7 @@ const Product = () => {
                 <QrCodeIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} /> ข้อมูลสินค้า
               </Typography>
               
-              <Box display="flex" gap={2} sx={{ flexDirection: { xs: "column", md: "row" } }}>
+              <Box display="flex" gap={2} mb={2} sx={{ flexDirection: { xs: "column", md: "row" } }}> {/* First row: Prefix and SKU */}
                 <Box sx={{ flex: { md: 0.25 } }}>
                     <TextField
                         label="รหัสขึ้นต้น"
@@ -1777,9 +2136,9 @@ const Product = () => {
                 <Box sx={{ flex: { md: 0.4 } }}>
                   <TextField
                     label="Barcode / รหัสสินค้า"
-                    name="barcode"
+                    name="sku"
                     fullWidth
-                    value={form.barcode}
+                    value={form.sku}
                     onChange={handleChang}
                     InputProps={{
                       startAdornment: (
@@ -1803,12 +2162,12 @@ const Product = () => {
                     }}
                   />
                 </Box>
-                <Box sx={{ flex: { md: 0.6 } }}>
+                <Box sx={{ flex: { md: 0.55 } }}>
                     <TextField
-                        label="ชื่อสินค้า"
+                        label="* ชื่อสินค้า"
                         name="product_name"
                         fullWidth
-                        required
+                        required={!editId}
                         error={!!errors.product_name}
                         helperText={errors.product_name}
                         value={form.product_name}
@@ -1823,6 +2182,68 @@ const Product = () => {
                     />
                 </Box>
               </Box>
+            </Box>
+
+            <Divider sx={{ borderStyle: "dashed" }} />
+
+            {/* --- UNIT MANAGEMENT SECTION (for both Add and Edit) --- */}
+            <Box mb={3}> {/* Added margin-bottom for spacing */}
+               <Typography variant="subtitle2" gutterBottom sx={{ color: "text.secondary", fontWeight: "bold" }}>
+                    <WidgetsIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                      การจัดการหน่วยนับ
+                </Typography>
+                <TextField
+                  label="* หน่วยนับหลัก"
+                  name="base_unit"
+                  fullWidth
+                  required
+                  error={!!errors.base_unit}
+                  helperText={errors.base_unit || "หน่วยพื้นฐานที่สุดของสินค้า เช่น ชิ้น, ต้น, กรัม"}
+                  value={form.base_unit}
+                  onChange={handleChang}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <WidgetsIcon fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ mb: 3, mt: 1, maxWidth: { sm: '50%' } }}
+                />
+
+                <Typography variant="subtitle2" gutterBottom sx={{ color: "text.secondary", fontWeight: "bold" }}>
+                      หน่วยนับย่อย (เทียบกับ {form.base_unit || 'หน่วยนับหลัก'})
+                </Typography>
+                <Stack spacing={1} mb={2}>
+                    {productUnits.map((unit, index) => (
+                        <Paper key={unit.unit_id || index} variant="outlined" sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#fafafa' }}>
+                            <Typography>1 {unit.unit_name} = <strong>{unit.conversion_rate}</strong> {form.base_unit || 'ชิ้น'}</Typography>
+                            <Tooltip title="ลบหน่วยย่อยนี้">
+                                <IconButton size="small" onClick={() => handleDeleteUnit(unit.unit_id, index)}><DeleteOutlineIcon fontSize="small" /></IconButton>
+                            </Tooltip>
+                        </Paper>
+                    ))}
+                    {productUnits.length === 0 && <Typography variant="caption" color="text.secondary" sx={{ pl: 1 }}>ยังไม่มีหน่วยย่อยสำหรับสินค้านี้</Typography>}
+                </Stack>
+                {/* Re-introducing the input fields and button for adding new units */}
+                <Stack direction="row" spacing={2} alignItems="center">
+                    <TextField
+                        label="ชื่อหน่วยใหม่ (เช่น โหล)"
+                        value={newUnit.name}
+                        onChange={(e) => setNewUnit({...newUnit, name: e.target.value})}
+                        size="small"
+                        fullWidth
+                    />
+                    <TextField
+                        label={`มีกี่ ${form.base_unit || 'ชิ้น'}`}
+                        type="number"
+                        value={newUnit.rate}
+                        onChange={(e) => setNewUnit({...newUnit, rate: e.target.value})}
+                        size="small"
+                        sx={{ width: 180 }}
+                    />
+                    <Button variant="contained" onClick={handleAddUnit} sx={{ height: 40 }}>เพิ่ม</Button>
+                </Stack>
             </Box>
 
             <Divider sx={{ borderStyle: "dashed" }} />
@@ -1847,19 +2268,19 @@ const Product = () => {
                     id="category-autocomplete"
                     options={categories} // ใช้ state `categories` ที่ดึงมาจาก API
                     getOptionLabel={(option) => option.category_name}
-                    value={categories.find((cat) => cat.id === form.Categories_category_id) || null}
+                    value={categories.find((cat) => cat.id === form.category_id) || null}
                     onChange={(event, newValue) => {
                       setForm({
                         ...form,
-                        Categories_category_id: newValue ? newValue.id : "",
+                        category_id: newValue ? newValue.id : "",
                       });
-                      if (errors.Categories_category_id) setErrors({ ...errors, Categories_category_id: null });
+                      if (errors.category_id) setErrors({ ...errors, category_id: null });
                     }}
                     fullWidth
                     renderInput={(params) => (
                       <TextField
                         {...params}
-                        label="หมวดหมู่สินค้า"
+                        label="* หมวดหมู่สินค้า"
                         placeholder="พิมพ์เพื่อค้นหา..."
                         InputProps={{
                           ...params.InputProps,
@@ -1874,16 +2295,7 @@ const Product = () => {
                         }}
                       />
                     )}
-                    renderOption={(props, option) => {
-                      const { key, ...otherProps } = props;
-                      return (
-                        <li key={key} {...otherProps}>
-                          {option.category_name}
-                        </li>
-                      );
-                    }}
                   />
-                  {/* ✅ สิ้นสุดส่วนแก้ไข */}
                   
                   <Button
                     variant="outlined"
@@ -1898,24 +2310,95 @@ const Product = () => {
                     <AddCircleOutlineIcon />
                   </Button>
                 </Box>
-                <Box sx={{ flex: 1 }}>
-                  <TextField
-                    label="ตำแหน่งเก็บ (Location)"
-                    name="location"
-                    fullWidth
-                    value={form.location}
-                    onChange={handleChang}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Inventory2OutlinedIcon
-                            fontSize="small"
-                            sx={{ color: "text.disabled" }}
-                          />
-                        </InputAdornment>
-                      ),
+                <Box sx={{ flex: 1, display: "flex", gap: 1 }}>
+                  <Autocomplete
+                    id="location-autocomplete"
+                    options={locations}
+                    getOptionLabel={(option) => option.location_name}
+                    value={locations.find((loc) => loc.id === form.location_id) || null}
+                    onChange={(event, newValue) => {
+                      setForm({ ...form, location_id: newValue ? newValue.id : "" });
+                      if (errors.location_id) setErrors({ ...errors, location_id: null });
                     }}
+                    fullWidth
+                    disabled={!!editId}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="* ตำแหน่งเก็บ (ล็อตแรก)"
+                        placeholder="เลือกตำแหน่ง..."
+                        error={!!errors.location_id}
+                        helperText={errors.location_id || (editId && "ไม่สามารถแก้ไขตำแหน่งของล็อตแรกได้")}
+                        InputProps={{
+                          ...params.InputProps,
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <LocationOnIcon fontSize="small" color="action" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
                   />
+                  <Button
+                    variant="outlined"
+                    sx={{
+                      minWidth: 56,
+                      height: 56,
+                      borderColor: "#ccc",
+                      color: "#666",
+                    }}
+                    onClick={() => setOpenLocModal(true)}
+                    disabled={!!editId}
+                  >
+                    <AddCircleOutlineIcon />
+                  </Button>
+                </Box>
+              </Box>
+              <Box sx={{ flex: 1, mt: 2 }}>
+                <Box sx={{ display: "flex", gap: 1 }}>
+                  <Autocomplete
+                    id="supplier-autocomplete"
+                    options={suppliers}
+                    getOptionLabel={(option) => option.supplier_name}
+                    value={suppliers.find((sup) => sup.id === form.supplier_id) || null}
+                    onChange={(event, newValue) => {
+                      setForm({ ...form, supplier_id: newValue ? newValue.id : "" });
+                      if (errors.supplier_id) setErrors({ ...errors, supplier_id: null });
+                    }}
+                    fullWidth
+                    disabled={!!editId}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="* ผู้จำหน่าย (ล็อตแรก)"
+                        placeholder="เลือกผู้จำหน่าย..."
+                        error={!!errors.supplier_id}
+                        helperText={errors.supplier_id || (editId && "ไม่สามารถแก้ไขผู้จำหน่ายของล็อตแรกได้")}
+                        InputProps={{
+                          ...params.InputProps,
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <LocalShippingIcon fontSize="small" color="action" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
+                  />
+                  <Button
+                    variant="outlined"
+                    sx={{
+                      minWidth: 56,
+                      height: 56,
+                      borderColor: "#ccc",
+                      color: "#666",
+                    }}
+                    onClick={() => setOpenSupModal(true)}
+                    disabled={!!editId}
+                  >
+                    <AddCircleOutlineIcon />
+                  </Button>
                 </Box>
               </Box>
             </Box>
@@ -1927,21 +2410,16 @@ const Product = () => {
               <Typography
                 variant="subtitle2"
                 gutterBottom
-                sx={{ color: "text.secondary", fontWeight: "bold" }}
-              >
+                sx={{ color: "text.secondary", fontWeight: "bold" }}>
                 <AttachMoneyIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} /> ราคาและสต็อก
               </Typography>
-              <Box
-                display="flex"
-                gap={2}
-                sx={{ flexDirection: { xs: "column", sm: "row" } }}
-              >
+              <Box display="flex" gap={2} sx={{ flexDirection: { xs: "column", sm: "row" } }}>
                 <TextField
-                  label="ราคาทุน"
+                  label="* ราคาทุน"
                   name="cost_price"
                   type="number"
                   inputProps={{ min: 0 }}
-                  required
+                  required={!editId}
                   fullWidth
                   sx={{ flex: 1 }}
                   error={!!errors.cost_price}
@@ -1957,11 +2435,11 @@ const Product = () => {
                   }}
                 />
                 <TextField
-                  label="ราคาขาย"
+                  label="* ราคาขายหน้าร้าน"
                   name="selling_price"
                   type="number"
                   inputProps={{ min: 0 }}
-                  required
+                  required={!editId}
                   fullWidth
                   sx={{ flex: 1 }}
                   error={!!errors.selling_price}
@@ -1977,17 +2455,18 @@ const Product = () => {
                   }}
                 />
                 <TextField
-                  label="จำนวนสต็อก"
-                  name="stock_quantity"
+                  label="* จำนวนสต็อก (ล็อตแรก)"
+                  name="initial_quantity"
                   type="number"
                   inputProps={{ min: 0 }}
-                  required
+                  required={!editId}
                   fullWidth
                   sx={{ flex: 1 }}
-                  error={!!errors.stock_quantity}
-                  helperText={errors.stock_quantity}
-                  value={form.stock_quantity}
+                  error={!!errors.initial_quantity}
+                  helperText={errors.initial_quantity}
+                  value={form.initial_quantity}
                   onChange={handleChang}
+                  disabled={!!editId}
                   InputProps={{
                     startAdornment: (
                         <InputAdornment position="start">
@@ -1997,6 +2476,7 @@ const Product = () => {
                   }}
                 />
               </Box>
+              {editId && <FormControlLabel control={<Checkbox checked={form.is_active} onChange={(e) => setForm({...form, is_active: e.target.checked})} />} label="เปิดใช้งานสินค้านี้ (Active)" sx={{mt:1}}/>}
             </Box>
           </Stack>
         </DialogContent>
@@ -2050,6 +2530,58 @@ const Product = () => {
           <Button onClick={handleAddCategory} variant="contained" color="secondary">
             บันทึก
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* --- MODAL ADD LOCATION --- */}
+      <Dialog open={openLocModal} onClose={() => setOpenLocModal(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+        <Box sx={{ bgcolor: 'info.main', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box display="flex" alignItems="center" gap={2}>
+                <Avatar sx={{ bgcolor: 'white', color: 'info.main' }}><LocationOnIcon /></Avatar>
+                <Box>
+                    <Typography variant="h6" fontWeight="bold">เพิ่มตำแหน่งเก็บใหม่</Typography>
+                </Box>
+            </Box>
+            <IconButton onClick={() => setOpenLocModal(false)} sx={{ color: 'white' }}>
+                <CloseIcon />
+            </IconButton>
+        </Box>
+        <DialogContent sx={{ p: 4 }}>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="ชื่อตำแหน่งเก็บ"
+            fullWidth
+            variant="outlined"
+            value={newLocationName}
+            onChange={(e) => setNewLocationName(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 3, bgcolor: "#f8f9fa", borderTop: "1px solid #eee" }}>
+          <Button onClick={() => setOpenLocModal(false)} sx={{ color: "text.secondary" }}>ยกเลิก</Button>
+          <Button onClick={handleAddLocation} variant="contained" color="info">บันทึก</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* --- MODAL ADD SUPPLIER --- */}
+      <Dialog open={openSupModal} onClose={() => setOpenSupModal(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+        <Box sx={{ bgcolor: 'primary.main', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box display="flex" alignItems="center" gap={2}>
+                <Avatar sx={{ bgcolor: 'white', color: 'primary.main' }}><LocalShippingIcon /></Avatar>
+                <Box>
+                    <Typography variant="h6" fontWeight="bold">เพิ่มผู้จำหน่ายใหม่</Typography>
+                </Box>
+            </Box>
+            <IconButton onClick={() => setOpenSupModal(false)} sx={{ color: 'white' }}>
+                <CloseIcon />
+            </IconButton>
+        </Box>
+        <DialogContent sx={{ p: 4 }}>
+          <TextField autoFocus margin="dense" label="ชื่อผู้จำหน่าย" fullWidth variant="outlined" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} />
+        </DialogContent>
+        <DialogActions sx={{ p: 3, bgcolor: "#f8f9fa", borderTop: "1px solid #eee" }}>
+          <Button onClick={() => setOpenSupModal(false)} sx={{ color: "text.secondary" }}>ยกเลิก</Button>
+          <Button onClick={handleAddSupplier} variant="contained" color="primary">บันทึก</Button>
         </DialogActions>
       </Dialog>
 

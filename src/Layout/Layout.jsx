@@ -95,6 +95,7 @@ export default function Layout({ children }) {
         open={sidebarOpen} 
         onClose={() => setSidebarOpen(false)} 
         isMobile={isMobile} // ส่งค่า isMobile ไปบอก Sidebar
+        user={user}
       />
       
       <Box 
@@ -107,8 +108,7 @@ export default function Layout({ children }) {
           // แต่เนื่องจาก Logic Sidebar เดิมของคุณซับซ้อน เราให้ Box ขยับเองตาม Flow ปกติ
           // หรือถ้าใช้ Permanent Drawer บน Desktop ต้องจัดการ Margin ตรงนี้
           ml: isMobile ? 0 : (sidebarOpen ? "260px" : "80px"),
-          transition: "margin 0.5s ease",
-          width: isMobile ? "100%" : `calc(100% - ${sidebarOpen ? 260 : 80}px)`
+          transition: "margin 0.5s ease"
         }}
       >
         {children}

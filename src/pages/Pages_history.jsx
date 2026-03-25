@@ -6,9 +6,7 @@ import History from '../components/History'
 const Pages_history = () => {
   return (
     <Layout>
-        <Box sx={{ overflow: 'hidden' }}>
-            <History />
-        </Box>
+        <History />
     </Layout>
   )
 }

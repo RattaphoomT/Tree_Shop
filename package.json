@@ -16,6 +16,7 @@
     "@mui/icons-material": "^7.3.6",
     "@mui/material": "^7.3.6",
     "@mui/x-date-pickers": "^8.24.0",
+    "axios": "^1.13.6",
     "bootstrap": "^5.3.8",
     "dayjs": "^1.11.19",
     "firebase": "^12.6.0",

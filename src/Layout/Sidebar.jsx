@@ -20,21 +20,32 @@ import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import PeopleIcon from "@mui/icons-material/People";
 import LocalFloristIcon from "@mui/icons-material/LocalFlorist"; // ไอคอนเดิมของคุณ
 import CloseIcon from "@mui/icons-material/Close"; // เพิ่มปุ่มปิดสำหรับมือถือ
+import ManageAccountsIcon from "@mui/icons-material/ManageAccounts"; // NEW: ไอคอนจัดการผู้ใช้
 import { Link, useLocation } from "react-router-dom";
 
 const drawerWidth = 260;
 const collapsedWidth = 80;
 
-export default function Sidebar({ open, onClose, isMobile }) {
+export default function Sidebar({ open, onClose, isMobile, user }) {
   const location = useLocation();
   const [hoverExpand, setHoverExpand] = React.useState(false);
 
-  const items = [
-    { to: "/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
+  const allItems = [
+    { to: "/dashboard", label: "ภาพรวม", icon: <DashboardIcon /> },
     { to: "/pos", label: "POS", icon: <PointOfSaleIcon /> },
     { to: "/product", label: "สินค้า", icon: <Inventory2Icon /> },
     { to: "/history", label: "ประวัติการขาย", icon: <ShoppingCartIcon /> },
+    { to: "/customers", label: "จัดการลูกค้า", icon: <PeopleIcon /> },
+    { to: "/users", label: "จัดการผู้ใช้", icon: <ManageAccountsIcon /> },
   ];
+
+  // Filter items based on user role
+  const items = React.useMemo(() => {
+    if (user?.role === 'Staff') {
+      return allItems.filter(item => item.to === '/pos' || item.to === '/dashboard');
+    }
+    return allItems; // For Owner and Manager, show all items
+  }, [user]);
 
   // Logic การขยาย:
   const isExpanded = isMobile ? true : (open || hoverExpand);

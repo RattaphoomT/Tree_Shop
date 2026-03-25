@@ -1,14 +1,14 @@
 import React from 'react'
 import Layout from '../Layout/Layout'
 import { Box } from '@mui/material'
-import POS from '../components/POS'
+import Customer from '../components/Customer'
 
-const Pages_pos = () => {
+const Pages_customer = () => {
   return (
     <Layout>
-        <POS/>
+        <Customer />
     </Layout>
   )
 }
 
-export default Pages_pos
+export default Pages_customer

@@ -55,12 +55,26 @@ const Copyright = (props) => {
 const Pages_login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({}); // เปลี่ยน state เป็น object เพื่อเก็บ error แยกช่อง
   const navigate = useNavigate();
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setError(''); // Reset error message
+    setErrors({}); // Reset errors
+
+    // --- ตรวจสอบข้อมูลฝั่ง Client ก่อนส่ง ---
+    const newErrors = {};
+    if (!username.trim()) {
+      newErrors.username = 'กรุณากรอกชื่อผู้ใช้';
+    }
+    if (!password.trim()) {
+      newErrors.password = 'กรุณากรอกรหัสผ่าน';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return; // หยุดการทำงานถ้าข้อมูลไม่ครบ
+    }
 
     try {
       // นี่คือส่วนที่ต้องเรียก API ไปยัง Backend ของคุณ
@@ -77,18 +91,19 @@ const Pages_login = () => {
         const data = await response.json();
         // เก็บ Token ที่ได้จาก Backend ไว้ใน LocalStorage เพื่อใช้ยืนยันตัวตนในหน้าอื่นๆ
         localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        console.log('Login successful:', data);
-        navigate('/dashboard'); // นำทางไปยังหน้า Dashboard
+        localStorage.setItem('user', JSON.stringify(data.user)); // <-- เพิ่มบรรทัดนี้
+        navigate('/pos');
       } else {
         // ถ้า Login ไม่สำเร็จ (เช่น ชื่อผู้ใช้/รหัสผ่านผิด)
-        setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+        const errorData = await response.json(); // ดึงข้อมูล error จาก backend
+        setErrors({ api: errorData.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' }); // แสดง error ที่ได้
       }
     } catch (err) {
-      setError('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+      // กรณีที่ network error หรือ server ไม่ทำงาน
+      setErrors({ api: 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้' });
       console.error('Login error:', err);
     }
-  }; // This was the extra closing brace
+  };
 
   return (
     <ThemeProvider theme={theme}>
@@ -99,7 +114,7 @@ const Pages_login = () => {
         <Grid
           item size={{ xs: false, sm: 4, md: 7 }}
           sx={{
-            backgroundImage: 'url(https://images.unsplash.com/photo-1463320726281-696a485928c7?q=80&w=2070&auto=format&fit=crop)', // รูปต้นไม้สวยๆ จาก Unsplash
+            backgroundImage: 'url(https://www.chillpainai.com/src/wewakeup/scoop/images/01ee261f6aecc847d6a8945826b51f9d2ca854b1.jpg)', // รูปต้นไม้สวยๆ จาก Unsplash
             backgroundRepeat: 'no-repeat',
             backgroundColor: (t) =>
               t.palette.mode === 'light' ? t.palette.grey[50] : t.palette.grey[900],
@@ -116,7 +131,7 @@ const Pages_login = () => {
                     left: 0,
                     width: '100%',
                     height: '100%',
-                    backgroundColor: 'rgba(0, 0, 0, 0.3)', // เงาดำจางๆ
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)', // เงาดำจางๆ
                     flexDirection: 'column',
                     justifyContent: 'center',
                     alignItems: 'center',
@@ -169,8 +184,8 @@ const Pages_login = () => {
             </Typography>
 
             {/* แสดงข้อความ Error ถ้ามี */}
-            {error && (
-              <Typography color="error" align="center" sx={{ mb: 2 }}>{error}</Typography>
+            {errors.api && (
+              <Typography color="error" align="center" sx={{ mb: 2 }}>{errors.api}</Typography>
             )}
 
             <Box component="form" noValidate onSubmit={handleSubmit} sx={{ mt: 1, width: '100%', maxWidth: '400px' }}>
@@ -185,6 +200,8 @@ const Pages_login = () => {
                 autoFocus
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                error={!!errors.username} // แสดงกรอบสีแดงถ้ามี error
+                helperText={errors.username || ''} // แสดงข้อความ error ใต้ช่อง
                 sx={{
                     '& .MuiOutlinedInput-root': {
                         '&.Mui-focused fieldset': {
@@ -204,6 +221,8 @@ const Pages_login = () => {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                error={!!errors.password} // แสดงกรอบสีแดงถ้ามี error
+                helperText={errors.password || ''} // แสดงข้อความ error ใต้ช่อง
               />
               
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
@@ -235,7 +254,7 @@ const Pages_login = () => {
               >
                 เข้าสู่ระบบ
               </Button>
-              
+
               <Copyright sx={{ mt: 5 }} />
             </Box>
           </Box>
