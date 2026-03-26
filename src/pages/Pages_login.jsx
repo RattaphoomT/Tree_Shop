@@ -10,42 +10,42 @@ import Paper from '@mui/material/Paper';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
+import { createTheme, ThemeProvider, keyframes } from '@mui/material/styles';
 import ForestIcon from '@mui/icons-material/Forest'; // ไอคอนต้นไม้สื่อถึง Stock
+import Alert from '@mui/material/Alert'; // NEW: For better error display
 
 // 1. สร้าง Theme ให้เข้ากับร้านต้นไม้ (โทนสีเขียวธรรมชาติ)
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#2e7d32', // สีเขียวใบไม้ (Forest Green)
+      main: '#4caf50', // A slightly brighter, more modern green
     },
     secondary: {
-      main: '#81c784', // สีเขียวอ่อน
+      main: '#ff9800', // Orange for contrast
     },
     background: {
       default: '#f4f6f8', // สีพื้นหลังเทาอ่อน สบายตา
     },
   },
   typography: {
-    fontFamily: [
-      '-apple-system',
-      'BlinkMacSystemFont',
-      '"Segoe UI"',
-      'Roboto',
-      '"Helvetica Neue"',
-      'Arial',
-      'sans-serif',
-    ].join(','),
+    fontFamily: 'Sarabun, sans-serif', // A more professional Thai font
+    h3: { fontWeight: 700 },
+    h5: { fontWeight: 600 },
+    h6: { fontWeight: 500 },
   },
 });
+
+// Animation keyframes
+const fadeIn = keyframes`
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+`;
 
 const Copyright = (props) => {
   return (
     <Typography variant="body2" color="text.secondary" align="center" {...props}>
       {'Copyright © '}
-      <Link color="inherit" href="#">
-        My Plant Stock System
-      </Link>{' '}
+      <Link color="inherit" href="#">GreenStock</Link>{' '}
       {new Date().getFullYear()}
       {'.'}
     </Typography>
@@ -107,159 +107,149 @@ const Pages_login = () => {
 
   return (
     <ThemeProvider theme={theme}>
-      <Grid container component="main" sx={{ height: '100vh' }}>
+      {/* Main container with background image and centering */}
+      <Box
+        component="main"
+        sx={{
+          height: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+          backgroundImage: 'url(https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1373)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          '&::before': { // Overlay for better text readability
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          }
+        }}
+      >
         <CssBaseline />
-        
-        {/* ส่วนรูปภาพด้านซ้าย (จะซ่อนเมื่ออยู่บนมือถือ) */}
-        <Grid
-          item size={{ xs: false, sm: 4, md: 7 }}
+
+        {/* Login Form Paper, centered on the page */}
+        <Paper
+          elevation={12}
           sx={{
-            backgroundImage: 'url(https://www.chillpainai.com/src/wewakeup/scoop/images/01ee261f6aecc847d6a8945826b51f9d2ca854b1.jpg)', // รูปต้นไม้สวยๆ จาก Unsplash
-            backgroundRepeat: 'no-repeat',
-            backgroundColor: (t) =>
-              t.palette.mode === 'light' ? t.palette.grey[50] : t.palette.grey[900],
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
+            p: { xs: 3, sm: 4 },
+            zIndex: 2,
             position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            borderRadius: 4,
+            maxWidth: 450,
+            width: '100%',
+            mx: 2,
+            animation: `${fadeIn} 0.8s ease-out`,
           }}
         >
-            {/* Overlay เพื่อให้ข้อความบนภาพอ่านง่ายขึ้น (Optional) */}
-            <Box
-                sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)', // เงาดำจางๆ
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    color: 'white',
-                    display: { xs: 'none', sm: 'flex' }
-                }}
-            >
-                <Typography variant="h3" component="h1" fontWeight="bold">
-                    ร้านต้นไม้ป้าเช็ง
-                </Typography>
-                <Typography variant="h6">
-                    Inventory Management System
-                </Typography>
-            </Box>
-        </Grid>
-
-        {/* ส่วนฟอร์ม Login ด้านขวา */}
-        <Grid item size={{ xs: 12, sm: 8, md: 5 }} component={Paper} elevation={6} square>
-          <Box
-            sx={{
-              my: 8,
-              mx: 4,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              height: '80%',
-              justifyContent: 'center'
-            }}
-          >
-            {/* Logo หรือ Icon ด้านบนฟอร์ม */}
-            <Box sx={{ 
-                m: 1, 
-                bgcolor: 'primary.main', 
-                borderRadius: '50%', 
-                p: 2,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: 3
-            }}>
-              <ForestIcon sx={{ color: 'white', fontSize: 40 }} />
-            </Box>
-
-            <Typography component="h1" variant="h5" sx={{ mt: 2, mb: 1, fontWeight: 'bold', color: '#333' }}>
-              เข้าสู่ระบบจัดการสต็อก
-            </Typography>
-            
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              ยินดีต้อนรับกลับ! กรุณากรอกข้อมูลเพื่อดำเนินการต่อ
-            </Typography>
-
-            {/* แสดงข้อความ Error ถ้ามี */}
-            {errors.api && (
-              <Typography color="error" align="center" sx={{ mb: 2 }}>{errors.api}</Typography>
-            )}
-
-            <Box component="form" noValidate onSubmit={handleSubmit} sx={{ mt: 1, width: '100%', maxWidth: '400px' }}>
-              <TextField
-                margin="normal"
-                required
-                fullWidth
-                id="email"
-                label="อีเมล หรือ ชื่อผู้ใช้"
-                name="username"
-                autoComplete="username"
-                autoFocus
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                error={!!errors.username} // แสดงกรอบสีแดงถ้ามี error
-                helperText={errors.username || ''} // แสดงข้อความ error ใต้ช่อง
-                sx={{
-                    '& .MuiOutlinedInput-root': {
-                        '&.Mui-focused fieldset': {
-                            borderColor: 'primary.main',
-                        },
-                    },
-                }}
-              />
-              <TextField
-                margin="normal"
-                required
-                fullWidth
-                name="password"
-                label="รหัสผ่าน"
-                type="password"
-                id="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                error={!!errors.password} // แสดงกรอบสีแดงถ้ามี error
-                helperText={errors.password || ''} // แสดงข้อความ error ใต้ช่อง
-              />
-              
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-                <FormControlLabel
-                    control={<Checkbox value="remember" color="primary" />}
-                    label="จดจำฉันไว้"
-                />
-                <Link href="#" variant="body2" sx={{ textDecoration: 'none', fontWeight: 500 }}>
-                    ลืมรหัสผ่าน?
-                </Link>
-              </Box>
-
-              <Button
-                type="submit"
-                fullWidth
-                variant="contained"
-                size="large"
-                sx={{ 
-                    mt: 3, 
-                    mb: 2, 
-                    py: 1.5,
-                    fontSize: '1rem',
-                    fontWeight: 'bold',
-                    boxShadow: '0 4px 12px rgba(46, 125, 50, 0.4)', // เงาสีเขียวสวยๆ
-                    '&:hover': {
-                        boxShadow: '0 6px 16px rgba(46, 125, 50, 0.6)',
-                    }
-                }}
-              >
-                เข้าสู่ระบบ
-              </Button>
-
-              <Copyright sx={{ mt: 5 }} />
-            </Box>
+          {/* Logo หรือ Icon ด้านบนฟอร์ม */}
+          <Box sx={{
+            m: 1,
+            background: 'linear-gradient(45deg, #4caf50 30%, #81c784 90%)',
+            borderRadius: '50%',
+            p: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: 3
+          }}>
+            <ForestIcon sx={{ color: 'white', fontSize: 40 }} />
           </Box>
-        </Grid>
-      </Grid>
+
+          <Typography component="h1" variant="h5" sx={{ mt: 2, mb: 1, color: '#333' }}>
+            เข้าสู่ระบบจัดการสต็อก
+          </Typography>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            ยินดีต้อนรับกลับ! กรุณากรอกข้อมูลเพื่อดำเนินการต่อ
+          </Typography>
+
+          {/* แสดงข้อความ Error ถ้ามี */}
+          {errors.api && (
+            <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
+              {errors.api}
+            </Alert>
+          )}
+
+          <Box component="form" noValidate onSubmit={handleSubmit} sx={{ mt: 1, width: '100%' }}>
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="email"
+              label="อีเมล หรือ ชื่อผู้ใช้"
+              name="username"
+              autoComplete="username"
+              autoFocus
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              error={!!errors.username} // แสดงกรอบสีแดงถ้ามี error
+              helperText={errors.username || ''} // แสดงข้อความ error ใต้ช่อง
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  '&.Mui-focused fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                },
+              }}
+            />
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              name="password"
+              label="รหัสผ่าน"
+              type="password"
+              id="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              error={!!errors.password} // แสดงกรอบสีแดงถ้ามี error
+              helperText={errors.password || ''} // แสดงข้อความ error ใต้ช่อง
+            />
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
+              <FormControlLabel
+                control={<Checkbox value="remember" color="primary" />}
+                label="จดจำฉันไว้"
+              />
+              <Link href="#" variant="body2" sx={{ textDecoration: 'none', fontWeight: 500 }}>
+                ลืมรหัสผ่าน?
+              </Link>
+            </Box>
+
+            <Button
+              type="submit"
+              fullWidth
+              variant="contained"
+              size="large"
+              sx={{
+                mt: 3,
+                mb: 2,
+                py: 1.5,
+                background: 'linear-gradient(45deg, #4caf50 30%, #66bb6a 90%)',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                boxShadow: '0 4px 12px rgba(76, 175, 80, 0.4)', // เงาสีเขียวสวยๆ
+                '&:hover': {
+                  boxShadow: '0 6px 16px rgba(76, 175, 80, 0.6)',
+                }
+              }}
+            >
+              เข้าสู่ระบบ
+            </Button>
+
+            <Copyright sx={{ mt: 5 }} />
+          </Box>
+        </Paper>
+      </Box>
     </ThemeProvider>
   );
 };

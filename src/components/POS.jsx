@@ -298,6 +298,9 @@ const POS = () => {
   // ================= PAYMENT LOGIC =================
   const handleOpenPayment = () => {
     setPaymentMethod("cash");
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setReceivedAmount("");
     setChangeAmount(0);
     setOpenPayment(true);
@@ -332,6 +335,9 @@ const POS = () => {
     if (paymentMethod === 'cash' && receivedVal < total) {
       showNotification("ยอดเงินที่รับมาไม่เพียงพอ", "error");
       return;
+    }
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
     }
 
     setIsProcessing(true);
@@ -609,7 +615,7 @@ const POS = () => {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ bgcolor: '#1a472a', color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
+        <DialogTitle sx={{ bgcolor: 'primary.main', color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
             <ReceiptLongIcon />
             ชำระเงิน
         </DialogTitle>

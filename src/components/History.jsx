@@ -46,10 +46,10 @@ const History = () => {
   const theme = useTheme();
   const navigate = useNavigate();
   
-  // --- Print Ref ---
-  const receiptRef = useRef();
-  const handlePrint = useReactToPrint({
-    content: () => receiptRef.current,
+  // --- Print Refs ---
+  const smallReceiptRef = useRef();
+  const handlePrintSmallReceipt = useReactToPrint({
+    content: () => smallReceiptRef.current,
   });
 
   // --- States ---
@@ -70,6 +70,7 @@ const History = () => {
   const [viewOpen, setViewOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [openReceiptPreview, setOpenReceiptPreview] = useState(false); // For 50mm receipt preview
 
   // Edit Form State
   const [editStatus, setEditStatus] = useState("");
@@ -143,6 +144,9 @@ const History = () => {
 
   // 3. View Details
   const handleView = async (order) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setSelectedOrder(order);
     setViewOpen(true);
     // NEW: Fetch items for this specific order
@@ -158,6 +162,9 @@ const History = () => {
 
   // 4. Edit Order
   const handleEdit = (order) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setSelectedOrder(order);
     setEditStatus(order.status);
     setEditPayment(order.payment_method);
@@ -451,8 +458,8 @@ const History = () => {
         </Box>
 
         <DialogContent dividers sx={{ p: 0 }}>
-          <Box ref={receiptRef} sx={{ p: 3 }}>
-            {selectedOrder && (
+          <Box sx={{ p: 3 }}>
+            {selectedOrder ? (
               <Stack spacing={3}>
                 <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 2, border: '1px solid #e0e0e0' }}>
                     <Grid container spacing={2} alignItems="center">
@@ -504,12 +511,15 @@ const History = () => {
                     </Box>
                 </Stack>
               </Stack>
-            )}
+            ) : <CircularProgress sx={{ m: 4 }} />}
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2, bgcolor: '#f8f9fa', borderTop: '1px solid #eee' }}>
             <Button onClick={() => setViewOpen(false)} sx={{ color: 'text.secondary' }}>ปิด</Button>
-            <Button onClick={handlePrint} variant="contained" startIcon={<PrintIcon />}>พิมพ์ใบเสร็จ</Button>
+            <Button onClick={() => {
+              if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+              setOpenReceiptPreview(true);
+            }} variant="contained" startIcon={<ReceiptLongIcon />}>ดูใบเสร็จ (50mm)</Button>
         </DialogActions>
       </Dialog>
 
@@ -550,6 +560,71 @@ const History = () => {
         </DialogActions>
       </Dialog>
 
+      {/* --- 3. RECEIPT PREVIEW DIALOG (50mm) --- */}
+      <Dialog
+        open={openReceiptPreview}
+        onClose={() => setOpenReceiptPreview(false)}
+        maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 2, width: 350 } }}
+      >
+        <DialogContent sx={{ p: 0 }}>
+            <Box ref={smallReceiptRef} sx={{ p: 3, bgcolor: 'white', color: 'black', fontFamily: 'monospace' }}>
+                {selectedOrder && (
+                  <>
+                    <Box textAlign="center" mb={2}>
+                        <Typography fontWeight="bold" variant="subtitle1">Three Shop</Typography>
+                        <Typography variant="caption" display="block">เลขที่ใบเสร็จ: {selectedOrder.receipt_no}</Typography>
+                        <Typography variant="caption" display="block">พนักงาน: {selectedOrder.user_name || 'N/A'}</Typography>
+                        <Typography variant="caption" display="block">ลูกค้า: {selectedOrder.customer_name || 'ลูกค้าทั่วไป'}</Typography>
+                        <Typography variant="caption" display="block">
+                            {dayjs(selectedOrder.order_date).format('D/M/BBBB HH:mm')}
+                        </Typography>
+                    </Box>
+
+                    <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
+
+                    <Box>
+                        {(selectedOrder.items || []).map((item, index) => (
+                            <Box key={index} display="flex" justifyContent="space-between" mb={0.5}>
+                                <Box sx={{ width: '60%' }}>
+                                    <Typography variant="caption" fontWeight="bold">{item.product_name}</Typography>
+                                    <Typography variant="caption" display="block" color="text.secondary">
+                                        {item.quantity} {item.sold_unit_name || ''} x {Number(item.unit_price).toLocaleString()}
+                                    </Typography>
+                                </Box>
+                                <Typography variant="caption" fontWeight="bold">
+                                    {Number(item.total_price).toLocaleString()}
+                                </Typography>
+                            </Box>
+                        ))}
+                    </Box>
+
+                    <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
+
+                    <Box display="flex" justifyContent="space-between"><Typography variant="caption">รวมเป็นเงิน</Typography><Typography variant="caption">{Number(selectedOrder.total_amount).toLocaleString()}</Typography></Box>
+                    {selectedOrder.discount_amount > 0 && (
+                        <Box display="flex" justifyContent="space-between" color="error.main"><Typography variant="caption">ส่วนลด</Typography><Typography variant="caption">-{Number(selectedOrder.discount_amount).toLocaleString()}</Typography></Box>
+                    )}
+                    <Box display="flex" justifyContent="space-between" mt={1}><Typography variant="subtitle2" fontWeight="bold">ยอดสุทธิ</Typography><Typography variant="subtitle2" fontWeight="bold">{Number(selectedOrder.net_amount).toLocaleString()}</Typography></Box>
+                    
+                    <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
+
+                    <Box display="flex" justifyContent="space-between">
+                        <Typography variant="caption">ชำระโดย ({selectedOrder.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'})</Typography>
+                    </Box>
+
+                    <Box textAlign="center" mt={3}>
+                        <Typography variant="caption" color="text.secondary">ขอบคุณที่ใช้บริการ</Typography>
+                    </Box>
+                  </>
+                )}
+            </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, display: 'flex', gap: 1 }}>
+            <Button onClick={() => setOpenReceiptPreview(false)} variant="outlined" fullWidth color="inherit">ปิด</Button>
+            <Button onClick={handlePrintSmallReceipt} variant="contained" fullWidth startIcon={<PrintIcon />} color="primary">พิมพ์ใบเสร็จ</Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

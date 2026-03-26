@@ -15,7 +15,7 @@ import {
   TableContainer, TableHead, TableRow, Paper, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, IconButton, Box,
   FormControl, InputLabel, Select, MenuItem, Chip, InputAdornment,
-  Stack, Tooltip, CircularProgress, Avatar, TablePagination,
+  Stack, Tooltip, CircularProgress, Avatar, TablePagination, useTheme,
 } from "@mui/material";
 
 // --- Icons Imports ---
@@ -31,6 +31,7 @@ import CardMembershipIcon from '@mui/icons-material/CardMembership';
 
 const Customer = () => {
   // --- STATE MANAGEMENT ---
+  const theme = useTheme(); // Initialize useTheme hook here
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState([]);
   const [form, setForm] = useState({
@@ -101,6 +102,9 @@ const Customer = () => {
   };
 
   const handleOpenAdd = () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setEditId(null);
     setForm({
       customer_name: "",
@@ -113,6 +117,9 @@ const Customer = () => {
   };
 
   const handleOpenEdit = (customer) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setEditId(customer.id);
     setForm({
       customer_name: customer.customer_name || "",
@@ -304,7 +311,7 @@ const Customer = () => {
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="ลบลูกค้า">
-                      <IconButton size="small" onClick={() => handleDelete(customer.id, customer.customer_name)} color="error">
+                      <IconButton size="small" onClick={() => handleDelete(customer.customer_id, customer.customer_name)} color="error">
                         <DeleteOutlineIcon />
                       </IconButton>
                     </Tooltip>
@@ -336,9 +343,7 @@ const Customer = () => {
       {/* --- DIALOG: ADD/EDIT CUSTOMER --- */}
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ bgcolor: 'primary.main', color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Avatar sx={{ bgcolor: 'white', color: 'primary.main' }}>
-            {editId ? <EditOutlinedIcon /> : <AddCircleOutlineIcon />}
-          </Avatar>
+          <Avatar sx={{ bgcolor: 'white', color: 'primary.main' }}>{editId ? <EditOutlinedIcon /> : <AddCircleOutlineIcon />}</Avatar>
           {editId ? "แก้ไขข้อมูลลูกค้า" : "เพิ่มลูกค้าใหม่"}
           <IconButton onClick={() => setOpen(false)} sx={{ position: 'absolute', right: 8, top: 8, color: 'white' }}>
             <CloseIcon />
@@ -393,7 +398,14 @@ const Customer = () => {
         </DialogContent>
         <DialogActions sx={{ p: 3, bgcolor: '#f8f9fa' }}>
           <Button onClick={() => setOpen(false)} color="inherit">ยกเลิก</Button>
-          <Button onClick={handleSave} variant="contained" color="primary">
+          <Button 
+            onClick={handleSave} 
+            variant="contained" 
+            sx={{ 
+              background: editId ? `linear-gradient(45deg, ${theme.palette.warning.main} 30%, ${theme.palette.warning.light} 90%)` : `linear-gradient(45deg, ${theme.palette.primary.main} 30%, #66bb6a 90%)`,
+              boxShadow: editId ? '0 4px 10px rgba(255, 152, 0, 0.4)' : '0 4px 10px rgba(76, 175, 80, 0.4)',
+              '&:hover': { boxShadow: editId ? '0 6px 14px rgba(255, 152, 0, 0.6)' : '0 6px 14px rgba(76, 175, 80, 0.6)' }
+            }}>
             {editId ? "บันทึกการแก้ไข" : "บันทึก"}
           </Button>
         </DialogActions>

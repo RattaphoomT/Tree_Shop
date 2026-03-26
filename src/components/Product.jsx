@@ -358,6 +358,9 @@ const Product = () => {
   };
 
   const handleOpenAdd = () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setEditId(null);
     setForm(initialFormState);
     setProductUnits([]); // Reset units for new product
@@ -368,6 +371,9 @@ const Product = () => {
   };
 
   const handleOpenEdit = (item) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setEditId(item.product_id);
     setForm({
       sku: item.sku || "",
@@ -640,6 +646,9 @@ const Product = () => {
   };
 
   const handleOpenAdjustDialog = (product) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setProductToAdjust(product);
     setAdjustmentForm({ change: '', type: 'WASTE', note: '' });
     setAdjustmentErrors({});
@@ -681,6 +690,9 @@ const Product = () => {
   };
 
   const handleOpenHistory = async (item) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setSelectedProductHistory(item);
     setHistoryData([]);
     setHistoryFilterDate(""); 
@@ -795,11 +807,17 @@ const Product = () => {
   };
 
   const handleOpenSingleBarcode = (item) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setItemsToPrint([item]);
     setOpenBarcodeDialog(true);
   };
 
   const handleOpenMultipleBarcode = () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     const targets = data.filter((item) => selectedIds.includes(item.product_id));
     setItemsToPrint(targets);
     setOpenBarcodeDialog(true);
@@ -1766,7 +1784,7 @@ const Product = () => {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
       >
-        <Box sx={{ bgcolor: 'success.main', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ bgcolor: 'primary.main', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box display="flex" alignItems="center" gap={2}>
                 <Avatar sx={{ bgcolor: 'white', color: 'success.main' }}><HistoryIcon /></Avatar>
                 <Box>
@@ -1972,7 +1990,7 @@ const Product = () => {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
       >
-        <Box sx={{ bgcolor: '#1976d2', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ bgcolor: 'primary.main', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box display="flex" alignItems="center" gap={2}>
                 <Avatar sx={{ bgcolor: 'white', color: '#1976d2' }}><PrintIcon /></Avatar>
                 <Box>
@@ -2078,7 +2096,7 @@ const Product = () => {
         maxWidth="md"
         PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
       >
-        <Box sx={{ 
+        <Box sx={{
             bgcolor: editId ? '#ed6c02' : 'success.main', 
             color: 'white', 
             px: 3, py: 2, 

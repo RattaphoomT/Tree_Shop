@@ -102,10 +102,10 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   
-  // --- Print Refs ---
-  const smallReceiptRef = useRef();
-  const handlePrintSmallReceipt = useReactToPrint({
-    content: () => smallReceiptRef.current,
+  // --- Print Ref ---
+  const receiptRef = useRef();
+  const handlePrint = useReactToPrint({
+    content: () => receiptRef.current,
   });
   
   // --- KPI Filter State ---
@@ -118,7 +118,7 @@ const Dashboard = () => {
 
   // --- View Order Dialog State ---
   const [viewOpen, setViewOpen] = useState(false);
-  const [openReceiptPreview, setOpenReceiptPreview] = useState(false); // For 50mm receipt preview
+  // const [openReceiptPreview, setOpenReceiptPreview] = useState(false); // For 50mm receipt preview
   const [selectedOrder, setSelectedOrder] = useState(null);
 
   // Calculated States
@@ -168,21 +168,27 @@ const Dashboard = () => {
 
   const handleViewOrder = async (order) => {
     // The order object from the table already has most details.
-    // We just need to fetch the items.
+    // We will now fetch the full order details to ensure all data is present.
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setSelectedOrder({
       ...order,
-      items: order.items || [] // Ensure items array exists
+      items: [] // Clear items to show loading state
     }); // Set initial data
     setViewOpen(true);
     try {
         const response = await api.get(`/history/${order.order_id}`);
-        const items = response.data;
-        // Update the selectedOrder state with the fetched items
-        setSelectedOrder(prev => ({ ...prev, items: items || [] }));
+        // The response should be the full order object, including user_name and items array
+        setSelectedOrder(response.data);
     } catch (error) {
         console.error("Could not fetch order items:", error);
         // You can add a snackbar here to show an error message
     }
+  };
+  const handleOpenReceiptPreview = () => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setOpenReceiptPreview(true);
   };
 
   const filteredTableData = (dashboardData.recentOrders || []).filter((order) => {
@@ -459,7 +465,7 @@ const Dashboard = () => {
 
             <DialogContent dividers sx={{ p: 0 }}>
                 <Box sx={{ p: 3 }}>
-                    {selectedOrder ? ( // Check if selectedOrder is not null
+                    {selectedOrder && (
                         <Stack spacing={3}>
                         <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 2, border: '1px solid #e0e0e0' }}>
                             <Grid container spacing={2} alignItems="center">
@@ -509,12 +515,12 @@ const Dashboard = () => {
                             </Box>
                         </Stack>
                         </Stack>
-                    ) : <CircularProgress sx={{ m: 4 }} />}
+                    )}
                 </Box>
             </DialogContent>
             <DialogActions sx={{ p: 2, bgcolor: '#f8f9fa', borderTop: '1px solid #eee' }}>
                 <Button onClick={() => setViewOpen(false)} sx={{ color: 'text.secondary' }}>ปิด</Button>
-                <Button onClick={() => setOpenReceiptPreview(true)} variant="contained" startIcon={<ReceiptLongIcon />}>ดูใบเสร็จ (50mm)</Button>
+                <Button onClick={handlePrint} variant="contained" startIcon={<PrintIcon />}>พิมพ์ใบเสร็จ</Button>
             </DialogActions>
         </Dialog>
 
@@ -572,7 +578,6 @@ const Dashboard = () => {
                 <Button onClick={handlePrintSmallReceipt} variant="contained" fullWidth startIcon={<PrintIcon />} color="primary">พิมพ์ใบเสร็จ</Button>
             </DialogActions>
         </Dialog>
-
         </Box>
     </LocalizationProvider>
   );
