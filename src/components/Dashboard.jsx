@@ -21,6 +21,7 @@ import {
 // --- MUI X Date Pickers ---
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import 'dayjs/locale/th';
 
@@ -103,13 +104,15 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   
   // --- Print Ref ---
-  const receiptRef = useRef();
-  const handlePrint = useReactToPrint({
-    content: () => receiptRef.current,
+  const smallReceiptRef = useRef();
+  const handlePrintSmallReceipt = useReactToPrint({
+    content: () => smallReceiptRef.current,
   });
   
   // --- KPI Filter State ---
   const [kpiFilter, setKpiFilter] = useState("today"); 
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
 
   // --- Table State ---
   const [page, setPage] = useState(0);
@@ -118,7 +121,7 @@ const Dashboard = () => {
 
   // --- View Order Dialog State ---
   const [viewOpen, setViewOpen] = useState(false);
-  // const [openReceiptPreview, setOpenReceiptPreview] = useState(false); // For 50mm receipt preview
+  const [openReceiptPreview, setOpenReceiptPreview] = useState(false); // For 50mm receipt preview
   const [selectedOrder, setSelectedOrder] = useState(null);
 
   // Calculated States
@@ -140,8 +143,20 @@ const Dashboard = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      // Fetch data from the new backend endpoint
-      const response = await api.get(`/dashboard/summary?period=${kpiFilter}`);
+      // NEW: Build URL based on filter type
+      let url = '/dashboard/summary';
+      if (kpiFilter === 'custom' && startDate && endDate) {
+        const start = dayjs(startDate).format('YYYY-MM-DD');
+        const end = dayjs(endDate).format('YYYY-MM-DD');
+        url += `?startDate=${start}&endDate=${end}`;
+      } else if (kpiFilter !== 'custom') {
+        url += `?period=${kpiFilter}`;
+      } else {
+        // Don't fetch if it's 'custom' but dates are not set, just show current data
+        setLoading(false);
+        return;
+      }
+      const response = await api.get(url);
       const data = response.data;
       setDashboardData(prevData => ({
         ...prevData,
@@ -156,7 +171,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchData();
-  }, [kpiFilter]); // Refetch when filter changes
+  }, [kpiFilter, startDate, endDate]); // Refetch when filter or dates change
 
   useEffect(() => {
     setPage(0);
@@ -179,11 +194,10 @@ const Dashboard = () => {
     setViewOpen(true);
     try {
         const response = await api.get(`/history/${order.order_id}`);
-        // The response should be the full order object, including user_name and items array
-        setSelectedOrder(response.data);
+        // The response from this endpoint is an array of items for the order.
+        setSelectedOrder(prev => ({ ...prev, items: response.data }));
     } catch (error) {
         console.error("Could not fetch order items:", error);
-        // You can add a snackbar here to show an error message
     }
   };
   const handleOpenReceiptPreview = () => {
@@ -220,6 +234,9 @@ const Dashboard = () => {
   };
 
   const getPeriodLabel = (filter) => {
+      if (filter === 'custom' && startDate && endDate) {
+          return `(${dayjs(startDate).format('D MMM YY')} - ${dayjs(endDate).format('D MMM YY')})`;
+      }
       switch(filter) {
           case 'today': return '(วันนี้)';
           case 'this_week': return '(สัปดาห์นี้)';
@@ -233,6 +250,25 @@ const Dashboard = () => {
   const handleKpiFilterChange = (event, newAlignment) => {
     if (newAlignment !== null) {
       setKpiFilter(newAlignment);
+      // NEW: Clear custom dates when a preset is selected
+      setStartDate(null);
+      setEndDate(null);
+    }
+  };
+
+  // NEW: Handlers for date pickers
+  const handleStartDateChange = (newValue) => {
+    setStartDate(newValue);
+    // If both dates are set, switch filter to 'custom'
+    if (newValue && endDate) {
+        setKpiFilter('custom');
+    }
+  };
+
+  const handleEndDateChange = (newValue) => {
+    setEndDate(newValue);
+    if (startDate && newValue) {
+        setKpiFilter('custom');
     }
   };
 
@@ -255,9 +291,10 @@ const Dashboard = () => {
             </Stack>
 
             {/* --- Filter Button Group (Left Aligned) --- */}
-            <Box mb={3} display="flex" justifyContent="flex-start">
+            <Box mb={3} display="flex" justifyContent="flex-start" alignItems="center" flexWrap="wrap" gap={2}>
                 <ToggleButtonGroup
-                    value={kpiFilter}
+                    // Deselect if custom date range is active
+                    value={kpiFilter === 'custom' ? null : kpiFilter}
                     exclusive
                     onChange={handleKpiFilterChange}
                     aria-label="kpi filter"
@@ -287,6 +324,24 @@ const Dashboard = () => {
                     <ToggleButton value="this_week">สัปดาห์นี้</ToggleButton>
                     <ToggleButton value="this_month">เดือนนี้</ToggleButton>
                 </ToggleButtonGroup>
+
+                <Stack direction="row" spacing={1} alignItems="center">
+                    <DatePicker
+                        label="วันที่เริ่มต้น"
+                        value={startDate}
+                        onChange={handleStartDateChange}
+                        maxDate={endDate}
+                        slotProps={{ textField: { size: 'small', sx: { bgcolor: 'white', minWidth: 160 } } }}
+                    />
+                    <Typography color="text.secondary">-</Typography>
+                    <DatePicker
+                        label="วันที่สิ้นสุด"
+                        value={endDate}
+                        onChange={handleEndDateChange}
+                        minDate={startDate}
+                        slotProps={{ textField: { size: 'small', sx: { bgcolor: 'white', minWidth: 160 } } }}
+                    />
+                </Stack>
             </Box>
 
             <Grid container spacing={3} mb={4}>
@@ -520,7 +575,7 @@ const Dashboard = () => {
             </DialogContent>
             <DialogActions sx={{ p: 2, bgcolor: '#f8f9fa', borderTop: '1px solid #eee' }}>
                 <Button onClick={() => setViewOpen(false)} sx={{ color: 'text.secondary' }}>ปิด</Button>
-                <Button onClick={handlePrint} variant="contained" startIcon={<PrintIcon />}>พิมพ์ใบเสร็จ</Button>
+                <Button onClick={handleOpenReceiptPreview} variant="contained" startIcon={<ReceiptLongIcon />}>ดูใบเสร็จ (50mm)</Button>
             </DialogActions>
         </Dialog>
 
