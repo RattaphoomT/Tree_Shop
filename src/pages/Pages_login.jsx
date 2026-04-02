@@ -43,10 +43,7 @@ const fadeIn = keyframes`
 const Copyright = (props) => {
   return (
     <Typography variant="body2" color="text.secondary" align="center" {...props}>
-      {'Copyright © '}
-      <Link color="inherit" href="#">GreenStock</Link>{' '}
-      {new Date().getFullYear()}
-      {'.'}
+      {'มหาวิทยาลัยขอนแก่น วิทยาลัยการคอมพิวเตอร์'}
     </Typography>
   );
 };

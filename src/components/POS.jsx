@@ -375,7 +375,7 @@ const POS = () => {
       
       setLastOrder({
           ...orderPayload,
-          receipt_no: result.receipt_no,
+          receipt_no: result.receipt_no || result.orderNumber, // ✅ FIX: ใช้ receipt_no จาก response, ถ้าไม่มีให้ใช้ order_number แทน
           cart: cart, // Use original cart for display to show selected units
           display_date: new Date(),
           cashier_name: currentUser?.username || 'Admin',
