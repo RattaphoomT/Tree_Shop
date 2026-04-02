@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '@mui/material/Button';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -8,27 +8,26 @@ import Checkbox from '@mui/material/Checkbox';
 import Link from '@mui/material/Link';
 import Paper from '@mui/material/Paper';
 import Box from '@mui/material/Box';
-import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';
 import { createTheme, ThemeProvider, keyframes } from '@mui/material/styles';
-import ForestIcon from '@mui/icons-material/Forest'; // ไอคอนต้นไม้สื่อถึง Stock
-import Alert from '@mui/material/Alert'; // NEW: For better error display
+import ForestIcon from '@mui/icons-material/Forest';
+import Alert from '@mui/material/Alert';
 
 // 1. สร้าง Theme ให้เข้ากับร้านต้นไม้ (โทนสีเขียวธรรมชาติ)
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#4caf50', // A slightly brighter, more modern green
+      main: '#4caf50', 
     },
     secondary: {
-      main: '#ff9800', // Orange for contrast
+      main: '#ff9800', 
     },
     background: {
-      default: '#f4f6f8', // สีพื้นหลังเทาอ่อน สบายตา
+      default: '#f4f6f8', 
     },
   },
   typography: {
-    fontFamily: 'Sarabun, sans-serif', // A more professional Thai font
+    fontFamily: 'Sarabun, sans-serif',
     h3: { fontWeight: 700 },
     h5: { fontWeight: 600 },
     h6: { fontWeight: 500 },
@@ -55,8 +54,17 @@ const Copyright = (props) => {
 const Pages_login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState({}); // เปลี่ยน state เป็น object เพื่อเก็บ error แยกช่อง
+  const [errors, setErrors] = useState({});
   const navigate = useNavigate();
+
+  // --- เพิ่ม useEffect เพื่อเช็คว่ามี Token อยู่แล้วหรือไม่ ---
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      // ถ้ามี Token อยู่แล้ว ให้เด้งไปหน้า /pos ทันที
+      navigate('/pos', { replace: true });
+    }
+  }, [navigate]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -73,12 +81,11 @@ const Pages_login = () => {
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      return; // หยุดการทำงานถ้าข้อมูลไม่ครบ
+      return; 
     }
 
     try {
-      // นี่คือส่วนที่ต้องเรียก API ไปยัง Backend ของคุณ
-      const response = await fetch('/api/auth/login', { // แก้ไข Endpoint ให้ถูกต้อง
+      const response = await fetch('/api/auth/login', { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -87,19 +94,15 @@ const Pages_login = () => {
       });
 
       if (response.ok) {
-        // ถ้า Backend ตอบกลับว่า Login สำเร็จ
         const data = await response.json();
-        // เก็บ Token ที่ได้จาก Backend ไว้ใน LocalStorage เพื่อใช้ยืนยันตัวตนในหน้าอื่นๆ
         localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user)); // <-- เพิ่มบรรทัดนี้
+        localStorage.setItem('user', JSON.stringify(data.user)); 
         navigate('/pos');
       } else {
-        // ถ้า Login ไม่สำเร็จ (เช่น ชื่อผู้ใช้/รหัสผ่านผิด)
-        const errorData = await response.json(); // ดึงข้อมูล error จาก backend
-        setErrors({ api: errorData.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' }); // แสดง error ที่ได้
+        const errorData = await response.json(); 
+        setErrors({ api: errorData.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' }); 
       }
     } catch (err) {
-      // กรณีที่ network error หรือ server ไม่ทำงาน
       setErrors({ api: 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้' });
       console.error('Login error:', err);
     }
@@ -107,7 +110,6 @@ const Pages_login = () => {
 
   return (
     <ThemeProvider theme={theme}>
-      {/* Main container with background image and centering */}
       <Box
         component="main"
         sx={{
@@ -119,7 +121,7 @@ const Pages_login = () => {
           backgroundImage: 'url(https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1373)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          '&::before': { // Overlay for better text readability
+          '&::before': { 
             content: '""',
             position: 'absolute',
             top: 0,
@@ -131,8 +133,6 @@ const Pages_login = () => {
         }}
       >
         <CssBaseline />
-
-        {/* Login Form Paper, centered on the page */}
         <Paper
           elevation={12}
           sx={{
@@ -149,7 +149,6 @@ const Pages_login = () => {
             animation: `${fadeIn} 0.8s ease-out`,
           }}
         >
-          {/* Logo หรือ Icon ด้านบนฟอร์ม */}
           <Box sx={{
             m: 1,
             background: 'linear-gradient(45deg, #4caf50 30%, #81c784 90%)',
@@ -171,7 +170,6 @@ const Pages_login = () => {
             ยินดีต้อนรับกลับ! กรุณากรอกข้อมูลเพื่อดำเนินการต่อ
           </Typography>
 
-          {/* แสดงข้อความ Error ถ้ามี */}
           {errors.api && (
             <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
               {errors.api}
@@ -183,15 +181,15 @@ const Pages_login = () => {
               margin="normal"
               required
               fullWidth
-              id="email"
+              id="username"
               label="อีเมล หรือ ชื่อผู้ใช้"
               name="username"
               autoComplete="username"
               autoFocus
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              error={!!errors.username} // แสดงกรอบสีแดงถ้ามี error
-              helperText={errors.username || ''} // แสดงข้อความ error ใต้ช่อง
+              error={!!errors.username} 
+              helperText={errors.username || ''} 
               sx={{
                 '& .MuiOutlinedInput-root': {
                   '&.Mui-focused fieldset': {
@@ -211,8 +209,8 @@ const Pages_login = () => {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              error={!!errors.password} // แสดงกรอบสีแดงถ้ามี error
-              helperText={errors.password || ''} // แสดงข้อความ error ใต้ช่อง
+              error={!!errors.password} 
+              helperText={errors.password || ''} 
             />
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
@@ -237,7 +235,7 @@ const Pages_login = () => {
                 background: 'linear-gradient(45deg, #4caf50 30%, #66bb6a 90%)',
                 fontSize: '1rem',
                 fontWeight: 'bold',
-                boxShadow: '0 4px 12px rgba(76, 175, 80, 0.4)', // เงาสีเขียวสวยๆ
+                boxShadow: '0 4px 12px rgba(76, 175, 80, 0.4)', 
                 '&:hover': {
                   boxShadow: '0 6px 16px rgba(76, 175, 80, 0.6)',
                 }
