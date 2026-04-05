@@ -18,7 +18,7 @@ import {
   TableHead, TableRow, Paper, IconButton, Chip, Stack, TextField,
   Autocomplete, Divider,
   InputAdornment, TablePagination, Dialog, DialogContent,
-  DialogActions, Button, Grid, FormControl, InputLabel, Select, MenuItem,
+  DialogActions, Button, Grid, FormControl, InputLabel, Select, MenuItem, FormHelperText,
   Card, Avatar, Tooltip, CircularProgress, alpha, useTheme
 } from "@mui/material";
 
@@ -74,7 +74,6 @@ const History = () => {
 
   // Edit Form State
   const [editStatus, setEditStatus] = useState("");
-  const [editPayment, setEditPayment] = useState("");
 
   // --- Fetch Data ---
   const fetchOrders = async () => {
@@ -167,7 +166,6 @@ const History = () => {
     }
     setSelectedOrder(order);
     setEditStatus(order.status);
-    setEditPayment(order.payment_method);
     setEditOpen(true);
   };
 
@@ -175,7 +173,7 @@ const History = () => {
     if (!selectedOrder) return;
     try {
       await api.put(`/history/${selectedOrder.id}`, { 
-        payment_method: editPayment 
+        status: editStatus 
       });
       
       await fetchOrders();
@@ -199,8 +197,15 @@ const History = () => {
   // 5. Delete Order
   const handleDeleteClick = (order) => {
     Swal.fire({
-      title: 'ยืนยันการยกเลิกรายการ?',
-      text: `คุณต้องการยกเลิกบิล ${order.receipt_no || order.order_number} ใช่หรือไม่? สต็อกสินค้าจะถูกคืนเข้าระบบ`,
+      title: `ยกเลิกบิล ${order.receipt_no || order.order_number}`,
+      input: 'text',
+      inputLabel: 'เหตุผลในการยกเลิก',
+      inputPlaceholder: 'กรอกเหตุผลที่นี่ (เช่น ลูกค้าเปลี่ยนใจ, สินค้าชำรุด)...',
+      inputValidator: (value) => {
+        if (!value) {
+          return 'คุณต้องระบุเหตุผลในการยกเลิก!'
+        }
+      },
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#d33',
@@ -208,9 +213,12 @@ const History = () => {
       confirmButtonText: 'ใช่, ยกเลิกเลย',
       cancelButtonText: 'ยกเลิก'
     }).then(async (result) => {
-      if (result.isConfirmed) {
+      // ✅ ตรวจสอบว่าผู้ใช้กดยืนยันและมีค่าที่กรอกเข้ามา
+      if (result.isConfirmed && result.value) {
+        const reason = result.value;
         try {
-          await api.delete(`/history/${order.id}`);
+          // ✅ ส่งเหตุผล (note) ไปใน body ของ request
+          await api.delete(`/history/${order.id}`, { data: { note: reason } });
           await fetchOrders(); // Refetch after delete
           Swal.fire('ยกเลิกสำเร็จ!', 'รายการถูกยกเลิก และสต็อกสินค้าได้ถูกคืนเข้าระบบแล้ว', 'success');
         } catch (error) {
@@ -467,6 +475,13 @@ const History = () => {
                         <Grid item xs={6}><Typography variant="caption" color="text.secondary">สถานะ</Typography><Box>{renderStatus(selectedOrder.status || 'completed')}</Box></Grid>
                         <Grid item xs={6}><Typography variant="caption" color="text.secondary">วิธีชำระเงิน</Typography><Typography variant="body2">{selectedOrder.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'}</Typography></Grid>
                         <Grid item xs={6}><Typography variant="caption" color="text.secondary">ลูกค้า</Typography><Typography variant="body2" fontWeight="bold">{selectedOrder.customer_name || 'ลูกค้าทั่วไป'}</Typography></Grid>
+                        {/* ✅ แสดงเหตุผลการยกเลิก ถ้ามี */}
+                        {selectedOrder.status === 'cancelled' && selectedOrder.note && (
+                            <Grid item xs={12}>
+                                <Typography variant="caption" color="text.secondary">เหตุผลที่ยกเลิก</Typography>
+                                <Typography variant="body2" color="error.main" fontWeight="bold">{selectedOrder.note}</Typography>
+                            </Grid>
+                        )}
                     </Grid>
                 </Box>
                 
@@ -539,18 +554,13 @@ const History = () => {
         <DialogContent dividers sx={{ p: 4 }}>
           <Stack spacing={3}>
               <FormControl fullWidth>
-                  {/* Status is not in DB, so this field is removed from edit */}
-                  <Typography variant="body2" color="text.secondary">สถานะออเดอร์: {renderStatus(selectedOrder?.status || 'completed')}</Typography>
-                  <Typography variant="caption" color="text.disabled"> (ไม่สามารถแก้ไขสถานะได้จากหน้านี้)</Typography>
-              </FormControl>
-              <Divider />
-
-              <FormControl fullWidth>
-                  <InputLabel>วิธีการชำระเงิน</InputLabel>
-                  <Select value={editPayment} label="วิธีการชำระเงิน" onChange={(e) => setEditPayment(e.target.value)}>
-                      <MenuItem value="cash">เงินสด (Cash)</MenuItem>
-                      <MenuItem value="transfer">โอนเงิน (Transfer)</MenuItem>
+                  <InputLabel>สถานะออเดอร์</InputLabel>
+                  <Select value={editStatus} label="สถานะออเดอร์" onChange={(e) => setEditStatus(e.target.value)}>
+                      <MenuItem value="pending">⚠️ รอชำระ</MenuItem>
+                      <MenuItem value="completed">✅ สำเร็จ</MenuItem>
+                      {/* การยกเลิกควรทำผ่านปุ่ม Delete เพื่อคืนสต็อก */}
                   </Select>
+                  <FormHelperText>หากต้องการยกเลิกออเดอร์ กรุณาใช้ปุ่ม "ยกเลิกรายการ" ในหน้าหลัก</FormHelperText>
               </FormControl>
           </Stack>
         </DialogContent>

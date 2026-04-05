@@ -249,6 +249,46 @@ const POS = () => {
     );
   };
 
+  const handleQtyInputChange = (id, value) => {
+    // Allow empty string for typing, but parse to number for checks
+    const newQty = value === '' ? '' : parseInt(value, 10);
+
+    // If user types something that is not a number, do nothing.
+    if (value !== '' && isNaN(newQty)) {
+      return;
+    }
+
+    setCart(prev =>
+      prev.map(item => {
+        if (item.product_id === id) {
+          if (newQty === '') {
+            return { ...item, qty: '' };
+          }
+
+          const productInState = products.find(p => p.product_id === id);
+          const totalStockInBaseUnits = parseInt(productInState?.stock_quantity) || 0;
+          const newQtyInBaseUnits = newQty * (item.conversionRate || 1);
+
+          if (newQtyInBaseUnits > totalStockInBaseUnits) {
+            const maxQty = Math.floor(totalStockInBaseUnits / (item.conversionRate || 1));
+            showNotification(`สต็อกไม่พอ! จำนวนสูงสุดคือ ${maxQty} ${item.selectedUnitName}`, "warning");
+            return { ...item, qty: maxQty > 0 ? maxQty : 1 };
+          }
+          
+          // Prevent quantity from being less than 1
+          return { ...item, qty: newQty < 1 ? 1 : newQty };
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleQtyInputBlur = (id) => {
+    setCart(prev =>
+      prev.map(item => item.product_id === id && (item.qty === '' || isNaN(item.qty) || item.qty < 1) ? { ...item, qty: 1 } : item)
+    );
+  };
+
   const handleDeleteItem = (id) => {
     setCart((prev) => prev.filter((item) => item.product_id !== id));
   };
@@ -552,7 +592,24 @@ const POS = () => {
                     <Box display="flex" alignItems="center" gap={1}>
                         <Box display="flex" alignItems="center" bgcolor="#f1f3f5" borderRadius="50px" px={0.5} py={0.5}>
                             <IconButton size="small" onClick={() => handleUpdateQty(item.product_id, -1)} sx={{ width: 28, height: 28, bgcolor: "white" }}><RemoveIcon sx={{ fontSize: 16, color: "#1a472a" }} /></IconButton>
-                            <Typography variant="body2" fontWeight="bold" sx={{ mx: 1.5, minWidth: 20, textAlign: "center" }}>{item.qty}</Typography>
+                            <TextField
+                              variant="standard"
+                              value={item.qty}
+                              onChange={(e) => handleQtyInputChange(item.product_id, e.target.value)}
+                              onBlur={() => handleQtyInputBlur(item.product_id)}
+                              type="number"
+                              sx={{
+                                width: 40,
+                                mx: 0.5,
+                                '& input': {
+                                  textAlign: 'center', fontWeight: 'bold', fontSize: '0.875rem', padding: '2px 0',
+                                },
+                                '& .MuiInput-underline:before, & .MuiInput-underline:after, & .MuiInput-underline:hover:not(.Mui-disabled):before': {
+                                  borderBottom: 'none',
+                                },
+                              }}
+                              inputProps={{ min: 1 }}
+                            />
                             <IconButton size="small" onClick={() => handleUpdateQty(item.product_id, 1)} sx={{ width: 28, height: 28, bgcolor: "#1a472a", color: "white" }}><AddIcon sx={{ fontSize: 16 }} /></IconButton>
                         </Box>
                         <FormControl size="small" sx={{ minWidth: 80 }}>

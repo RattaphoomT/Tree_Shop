@@ -35,6 +35,7 @@ const Users = () => {
         is_active: true,
     });
     const [errors, setErrors] = useState({});
+    const [currentUser, setCurrentUser] = useState(null);
 
     // --- DATA FETCHING ---
     useEffect(() => {
@@ -42,6 +43,15 @@ const Users = () => {
     }, []);
 
     const fetchUsers = async () => {
+        // Get current user from localStorage to check roles
+        try {
+            const userString = localStorage.getItem('user');
+            if (userString) {
+                setCurrentUser(JSON.parse(userString));
+            }
+        } catch (e) {
+            console.error("Failed to parse user from localStorage", e);
+        }
         try {
             setLoading(true);
             const response = await api.get('/users');
@@ -247,15 +257,29 @@ const Users = () => {
                                 </TableCell>
                                 <TableCell align="center">
                                     <Stack direction="row" spacing={1} justifyContent="center">
-                                        <Tooltip title="แก้ไขข้อมูล">
-                                            <IconButton size="small" onClick={() => handleOpenEdit(user)} color="warning">
-                                                <EditOutlinedIcon />
-                                            </IconButton>
+                                        <Tooltip title={currentUser?.role === 'Manager' && user.role === 'Owner' ? 'ผู้จัดการไม่สามารถแก้ไขเจ้าของร้านได้' : 'แก้ไขข้อมูล'}>
+                                            <span>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => handleOpenEdit(user)}
+                                                    color="warning"
+                                                    disabled={currentUser?.role === 'Manager' && user.role === 'Owner'}
+                                                >
+                                                    <EditOutlinedIcon />
+                                                </IconButton>
+                                            </span>
                                         </Tooltip>
-                                        <Tooltip title="ลบผู้ใช้">
-                                            <IconButton size="small" onClick={() => handleDelete(user.id, user.username)} color="error">
-                                                <DeleteOutlineIcon />
-                                            </IconButton>
+                                        <Tooltip title={user.id === currentUser?.user_id ? 'ไม่สามารถลบตัวเองได้' : (currentUser?.role === 'Manager' && user.role === 'Owner' ? 'ผู้จัดการไม่สามารถลบเจ้าของร้านได้' : 'ลบผู้ใช้')}>
+                                            <span>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => handleDelete(user.id, user.username)}
+                                                    color="error"
+                                                    disabled={user.id === currentUser?.user_id || (currentUser?.role === 'Manager' && user.role === 'Owner')}
+                                                >
+                                                    <DeleteOutlineIcon />
+                                                </IconButton>
+                                            </span>
                                         </Tooltip>
                                     </Stack>
                                 </TableCell>
@@ -323,7 +347,9 @@ const Users = () => {
                             >
                                 <MenuItem value="Staff">พนักงาน (Staff)</MenuItem>
                                 <MenuItem value="Manager">ผู้จัดการ (Manager)</MenuItem>
-                                <MenuItem value="Owner">เจ้าของร้าน (Owner)</MenuItem>
+                                {currentUser?.role === 'Owner' && (
+                                    <MenuItem value="Owner">เจ้าของร้าน (Owner)</MenuItem>
+                                )}
                             </Select>
                         </FormControl>
                         <FormControlLabel

@@ -655,6 +655,15 @@ const Product = () => {
     setOpenAdjustDialog(true);
   };
 
+  const handleAdjustmentFormChange = (e) => {
+    const { name, value } = e.target;
+    setAdjustmentForm(prev => ({ ...prev, [name]: value }));
+    // Clear errors when user starts typing
+    if (Object.keys(adjustmentErrors).length > 0) {
+        setAdjustmentErrors({});
+    }
+  };
+
   const handleSaveAdjustment = async () => {
     const { change, type, note } = adjustmentForm;
     const newErrors = {};
@@ -663,8 +672,25 @@ const Product = () => {
     if (!Number.isInteger(changeValue) || changeValue === 0) {
       newErrors.change = "กรุณาระบุจำนวนที่เปลี่ยนแปลง (ต้องไม่ใช่ 0)";
     }
-    if (changeValue < 0 && Math.abs(changeValue) > (productToAdjust?.stock_quantity || 0)) {
-      newErrors.change = `ไม่สามารถหักสต็อกเกินจำนวนที่มี (มีอยู่ ${productToAdjust.stock_quantity})`;
+
+    // --- VALIDATION LOGIC BASED ON TYPE ---
+    // For Waste or Giveaway, value must be negative and not exceed current stock.
+    if (type === 'WASTE' || type === 'GIVEAWAY') {
+      if (changeValue > 0) {
+        newErrors.change = "สำหรับของเสีย/ของแถม ต้องใส่ค่าเป็นลบเท่านั้น (เช่น -5)";
+      } else if (Math.abs(changeValue) > (productToAdjust?.stock_quantity || 0)) {
+        newErrors.change = `ไม่สามารถหักสต็อกเกินจำนวนที่มี (มีอยู่ ${productToAdjust.stock_quantity})`;
+      }
+    } 
+    // For Customer Return, value must be positive.
+    else if (type === 'RETURN') {
+      if (changeValue < 0) {
+        newErrors.change = "สำหรับการรับคืนสินค้า ต้องใส่ค่าเป็นบวกเท่านั้น (เช่น 5)";
+      }
+    } 
+    // For general adjustment, just check stock if negative.
+    else if (type === 'ADJUST' && changeValue < 0 && Math.abs(changeValue) > (productToAdjust?.stock_quantity || 0)) {
+        newErrors.change = `ไม่สามารถหักสต็อกเกินจำนวนที่มี (มีอยู่ ${productToAdjust.stock_quantity})`;
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -1453,10 +1479,11 @@ const Product = () => {
               <TextField
                 label="จำนวนที่เปลี่ยนแปลง"
                 type="number"
+                name="change"
                 value={adjustmentForm.change}
-                onChange={(e) => setAdjustmentForm({ ...adjustmentForm, change: e.target.value })}
+                onChange={handleAdjustmentFormChange}
                 error={!!adjustmentErrors.change}
-                helperText={adjustmentErrors.change || "ใส่ค่าบวกเพื่อเพิ่มสต็อก, ค่าลบเพื่อลดสต็อก"}
+                helperText={adjustmentErrors.change || "ใส่ค่าบวก (+) เพื่อเพิ่มสต็อก, ค่าลบ (-) เพื่อลดสต็อก"}
                 fullWidth
                 autoFocus
               />
@@ -1464,19 +1491,21 @@ const Product = () => {
                 <InputLabel>ประเภทรายการ</InputLabel>
                 <Select
                   value={adjustmentForm.type}
+                  name="type"
                   label="ประเภทรายการ"
-                  onChange={(e) => setAdjustmentForm({ ...adjustmentForm, type: e.target.value })}
+                  onChange={handleAdjustmentFormChange}
                 >
                   <MenuItem value="WASTE">ของเสีย / หมดอายุ</MenuItem>
                   <MenuItem value="ADJUST">ตรวจนับสต็อก</MenuItem>
                   <MenuItem value="RETURN">ลูกค้านำมาคืน</MenuItem>
-                  <MenuItem value="RETURN">แถมให้ลูกค้า</MenuItem>
+                  <MenuItem value="GIVEAWAY">แถมให้ลูกค้า</MenuItem>
                 </Select>
               </FormControl>
               <TextField
                 label="หมายเหตุ (ถ้ามี)"
                 value={adjustmentForm.note}
-                onChange={(e) => setAdjustmentForm({ ...adjustmentForm, note: e.target.value })}
+                name="note"
+                onChange={handleAdjustmentFormChange}
                 fullWidth
                 multiline
                 rows={2}

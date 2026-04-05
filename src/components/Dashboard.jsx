@@ -528,6 +528,13 @@ const Dashboard = () => {
                                 <Grid item xs={6}><Typography variant="caption" color="text.secondary">สถานะ</Typography><Box>{renderStatus(selectedOrder.status || 'completed')}</Box></Grid>
                                 <Grid item xs={6}><Typography variant="caption" color="text.secondary">วิธีชำระเงิน</Typography><Typography variant="body2">{selectedOrder.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'}</Typography></Grid>
                                 <Grid item xs={6}><Typography variant="caption" color="text.secondary">ลูกค้า</Typography><Typography variant="body2" fontWeight="bold">{selectedOrder.customer_name || 'ลูกค้าทั่วไป'}</Typography></Grid>
+                                {/* ✅ แสดงเหตุผลการยกเลิก ถ้ามี */}
+                                {selectedOrder.status === 'cancelled' && selectedOrder.note && (
+                                    <Grid item xs={12}>
+                                        <Typography variant="caption" color="text.secondary">เหตุผลที่ยกเลิก</Typography>
+                                        <Typography variant="body2" color="error.main" fontWeight="bold">{selectedOrder.note}</Typography>
+                                    </Grid>
+                                )}
                             </Grid>
                         </Box>
                         
