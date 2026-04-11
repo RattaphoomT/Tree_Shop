@@ -22,6 +22,7 @@ import LocalFloristIcon from "@mui/icons-material/LocalFlorist"; // ไอคอ
 import CloseIcon from "@mui/icons-material/Close"; // เพิ่มปุ่มปิดสำหรับมือถือ
 import ManageAccountsIcon from "@mui/icons-material/ManageAccounts"; // NEW: ไอคอนจัดการผู้ใช้
 import { Link, useLocation } from "react-router-dom";
+import WidgetsIcon from '@mui/icons-material/Widgets';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 
 const drawerWidth = 260;
@@ -35,6 +36,7 @@ export default function Sidebar({ open, onClose, isMobile, user }) {
     { to: "/dashboard", label: "ภาพรวม", icon: <DashboardIcon /> },
     { to: "/pos", label: "POS", icon: <PointOfSaleIcon /> },
     { to: "/product", label: "สินค้า", icon: <Inventory2Icon /> },
+    { to: "/inventory-batches", label: "รายการล็อตสินค้า", icon: <WidgetsIcon /> },
     { to: "/history", label: "ประวัติการขาย", icon: <ShoppingCartIcon /> },
     { to: "/stock-history", label: "ประวัติสต็อก", icon: <AssessmentIcon /> },
     { to: "/customers", label: "จัดการลูกค้า", icon: <PeopleIcon /> },

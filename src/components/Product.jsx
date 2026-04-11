@@ -211,8 +211,17 @@ const Product = () => {
   // --- Stock Adjustment ---
   const [openAdjustDialog, setOpenAdjustDialog] = useState(false);
   const [productToAdjust, setProductToAdjust] = useState(null);
-  const [adjustmentForm, setAdjustmentForm] = useState({ change: '', type: 'WASTE', note: '' });
+  const [adjustmentForm, setAdjustmentForm] = useState({ batch_id: '', change: '', type: 'WASTE', note: '' });
   const [adjustmentErrors, setAdjustmentErrors] = useState({});
+  const [availableBatches, setAvailableBatches] = useState([]);
+  const [isFetchingBatches, setIsFetchingBatches] = useState(false);
+  
+  // --- Receive Stock ---
+  const [openReceiveStockDialog, setOpenReceiveStockDialog] = useState(false);
+  const [receiveStockForm, setReceiveStockForm] = useState({
+    product: null, quantity: '', cost_price: '', location_id: '', supplier_id: '', supplier_lot_no: ''
+  });
+  const [receiveStockErrors, setReceiveStockErrors] = useState({});
 
 
   // --- AI / Bill Scan ---
@@ -645,14 +654,27 @@ const Product = () => {
     }
   };
 
-  const handleOpenAdjustDialog = (product) => {
+  const handleOpenAdjustDialog = async (product) => {
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
     setProductToAdjust(product);
-    setAdjustmentForm({ change: '', type: 'WASTE', note: '' });
+    setAdjustmentForm({ batch_id: '', change: '', type: 'WASTE', note: '' });
     setAdjustmentErrors({});
+    setAvailableBatches([]);
     setOpenAdjustDialog(true);
+
+    // Fetch batches for this product
+    setIsFetchingBatches(true);
+    try {
+        const response = await api.get(`/stock/batches/${product.product_id}`);
+        setAvailableBatches(response.data);
+    } catch (error) {
+        console.error("Error fetching batches:", error);
+        showSnackbar("ไม่สามารถโหลดข้อมูลล็อตสินค้าได้", "error");
+    } finally {
+        setIsFetchingBatches(false);
+    }
   };
 
   const handleAdjustmentFormChange = (e) => {
@@ -665,7 +687,7 @@ const Product = () => {
   };
 
   const handleSaveAdjustment = async () => {
-    const { change, type, note } = adjustmentForm;
+    const { batch_id, change, type, note } = adjustmentForm;
     const newErrors = {};
     const changeValue = parseInt(change, 10);
 
@@ -701,6 +723,7 @@ const Product = () => {
     try {
       await api.post('/stock/adjust', {
         product_id: productToAdjust.product_id,
+        batch_id: batch_id || null,
         change: changeValue,
         type: type,
         note: note,
@@ -713,6 +736,78 @@ const Product = () => {
       showSnackbar(errorMessage, "error");
       console.error("Stock adjustment error:", error);
     }
+  };
+
+  const handleOpenReceiveStock = () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    setReceiveStockForm({
+      product: null, quantity: '', cost_price: '', location_id: '', supplier_id: '', supplier_lot_no: ''
+    });
+    setReceiveStockErrors({});
+    setOpenReceiveStockDialog(true);
+  };
+
+  const handleReceiveStockFormChange = (e) => {
+    const { name, value } = e.target;
+    setReceiveStockForm(prev => ({ ...prev, [name]: value }));
+    if (receiveStockErrors[name]) {
+      setReceiveStockErrors(prev => ({ ...prev, [name]: null }));
+    }
+  };
+
+  const handleSaveReceiveStock = async () => {
+    const { product, quantity, cost_price, location_id, supplier_id, supplier_lot_no } = receiveStockForm;
+    const newErrors = {};
+
+    if (!product) newErrors.product = "กรุณาเลือกสินค้า";
+    if (!quantity || parseInt(quantity) <= 0) newErrors.quantity = "กรุณาระบุจำนวนที่ถูกต้อง";
+    if (!cost_price || parseFloat(cost_price) <= 0) newErrors.cost_price = "กรุณาระบุราคาทุนที่ถูกต้อง";
+    if (!location_id) newErrors.location_id = "กรุณาเลือกตำแหน่งเก็บ";
+    if (!supplier_id) newErrors.supplier_id = "กรุณาเลือกผู้จำหน่าย";
+
+    if (Object.keys(newErrors).length > 0) {
+      setReceiveStockErrors(newErrors);
+      return;
+    }
+
+    try {
+      await api.post('/stock/receive', {
+        product_id: product.product_id,
+        quantity: parseInt(quantity),
+        cost_price: parseFloat(cost_price),
+        location_id: location_id,
+        supplier_id: supplier_id,
+        supplier_lot_no: supplier_lot_no || null,
+      });
+
+      showSnackbar("รับสินค้าเข้าสต็อกสำเร็จ", "success");
+      setOpenReceiveStockDialog(false);
+      await fetchData(); // Refresh product list
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || "เกิดข้อผิดพลาดในการรับสินค้าเข้าสต็อก";
+      showSnackbar(errorMessage, "error");
+      console.error("Receive stock error:", error);
+    }
+  };
+
+  const handleAutocompleteProductChange = (event, newValue) => {
+    setReceiveStockForm(prev => ({ 
+      ...prev, 
+      product: newValue,
+      cost_price: newValue?.cost_price || '', // Set default cost price from product
+    }));
+    if (receiveStockErrors.product) {
+      setReceiveStockErrors(prev => ({ ...prev, product: null }));
+    }
+  };
+
+  const handleAutocompleteLocationChange = (event, newValue) => {
+    setReceiveStockForm(prev => ({ ...prev, location_id: newValue ? newValue.id : '' }));
+  };
+  const handleAutocompleteSupplierChange = (event, newValue) => {
+    setReceiveStockForm(prev => ({ ...prev, supplier_id: newValue ? newValue.id : '' }));
   };
 
   const handleOpenHistory = async (item) => {
@@ -1038,7 +1133,21 @@ const Product = () => {
           )}
           
           {/* ✅ Scan Bill Button */}
-          <Button
+           <Button
+            variant="contained"
+            color="primary"
+            startIcon={<WidgetsIcon />}
+            onClick={handleOpenReceiveStock}
+            sx={{
+              borderRadius: 2,
+              px: 3,
+              py: 1.5,
+              textTransform: "none",
+              fontSize: "1rem",
+            }}
+          >รับสินค้าเข้าสต็อก</Button>
+
+          {/* <Button
             variant="contained"
             color="secondary"
             startIcon={<CameraAltIcon />}
@@ -1055,7 +1164,7 @@ const Product = () => {
             }}
           >
             สแกนบิลสินค้า (AI)
-          </Button>
+          </Button> */}
 
           <Button
             variant="contained"
@@ -1370,7 +1479,7 @@ const Product = () => {
                           ><EditOutlinedIcon />
                           </IconButton>
                         </Tooltip>
-                        <Tooltip title="ลบสินค้า">
+                        {/* <Tooltip title="ลบสินค้า">
                           <IconButton
                             size="small"
                             sx={{
@@ -1380,7 +1489,7 @@ const Product = () => {
                             }}
                             onClick={() => handleDeleteProduct(item.product_id)}
                           ><DeleteOutlineIcon /></IconButton>
-                        </Tooltip>
+                        </Tooltip> */}
                         {/* Removed the commented-out status change Tooltip and Menu to fix JSX error */}
                       </Stack>
                     </TableCell>
@@ -1476,6 +1585,31 @@ const Product = () => {
                   สต็อกปัจจุบัน: <Chip label={productToAdjust.stock_quantity} color="primary" size="small" />
                 </Typography>
               </Box>
+              {/* NEW: Batch Selector */}
+              <FormControl fullWidth error={!!adjustmentErrors.batch_id}>
+                <InputLabel>เลือกล็อตที่ต้องการปรับ (ถ้าไม่เลือกจะใช้ระบบ FIFO)</InputLabel>
+                <Select
+                  name="batch_id"
+                  value={adjustmentForm.batch_id}
+                  label="เลือกล็อตที่ต้องการปรับ (ถ้าไม่เลือกจะใช้ระบบ FIFO)"
+                  onChange={handleAdjustmentFormChange}
+                  disabled={isFetchingBatches}
+                >
+                  <MenuItem value="">
+                    <em>อัตโนมัติ (FIFO/ล็อตล่าสุด)</em>
+                  </MenuItem>
+                  {isFetchingBatches ? (
+                    <MenuItem disabled><CircularProgress size={20} /></MenuItem>
+                  ) : (
+                    availableBatches.map((batch) => (
+                      <MenuItem key={batch.batch_id} value={batch.batch_id}>
+                        {`ล็อต: ${batch.supplier_lot_no || `(ID: ${batch.batch_id})`} (รับเข้า: ${new Date(batch.received_date).toLocaleDateString('th-TH')}, เหลือ: ${batch.current_quantity}, ทุน: ${batch.cost_price})`}
+                      </MenuItem>
+                    ))
+                  )}
+                </Select>
+                {adjustmentErrors.batch_id && <FormHelperText>{adjustmentErrors.batch_id}</FormHelperText>}
+              </FormControl>
               <TextField
                 label="จำนวนที่เปลี่ยนแปลง"
                 type="number"
@@ -1518,6 +1652,117 @@ const Product = () => {
           <Button onClick={handleSaveAdjustment} variant="contained" color="primary">
             บันทึกการปรับสต็อก
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* --- DIALOG: RECEIVE STOCK --- */}
+      <Dialog open={openReceiveStockDialog} onClose={() => setOpenReceiveStockDialog(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+        <Box sx={{ bgcolor: 'primary.main', color: 'white', px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box display="flex" alignItems="center" gap={2}>
+                <Avatar sx={{ bgcolor: 'white', color: 'primary.main' }}><WidgetsIcon /></Avatar>
+                <Box>
+                    <Typography variant="h6" fontWeight="bold">รับสินค้าเข้าสต็อก</Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.9 }}>เพิ่มสินค้าล็อตใหม่สำหรับสินค้าที่มีอยู่แล้ว</Typography>
+                </Box>
+            </Box>
+            <IconButton onClick={() => setOpenReceiveStockDialog(false)} sx={{ color: 'white' }}>
+                <CloseIcon />
+            </IconButton>
+        </Box>
+        <DialogContent dividers sx={{ p: 4, bgcolor: '#f9fafb' }}>
+            <Stack spacing={3}>
+                <Autocomplete
+                    id="receive-product-autocomplete"
+                    options={data.filter(p => p.is_active)} // Only show active products
+                    getOptionLabel={(option) => `${option.product_name} (SKU: ${option.sku || 'N/A'})`}
+                    value={receiveStockForm.product}
+                    onChange={handleAutocompleteProductChange}
+                    isOptionEqualToValue={(option, value) => option.product_id === value.product_id}
+                    renderInput={(params) => (
+                        <TextField
+                            {...params}
+                            label="* ค้นหาสินค้า"
+                            error={!!receiveStockErrors.product}
+                            helperText={receiveStockErrors.product}
+                            autoFocus
+                        />
+                    )}
+                />
+                <Grid container spacing={2}>
+                    <Grid item size={{ xs:12, sm:6 }}>
+                        <TextField
+                            label="* จำนวนที่รับ"
+                            name="quantity"
+                            type="number"
+                            value={receiveStockForm.quantity}
+                            onChange={handleReceiveStockFormChange}
+                            error={!!receiveStockErrors.quantity}
+                            helperText={receiveStockErrors.quantity}
+                            fullWidth
+                        />
+                    </Grid>
+                    <Grid item size={{ xs:12, sm:6 }} >
+                        <TextField
+                            label="* ราคาทุนต่อหน่วย (สำหรับล็อตนี้)"
+                            name="cost_price"
+                            type="number"
+                            value={receiveStockForm.cost_price}
+                            onChange={handleReceiveStockFormChange}
+                            error={!!receiveStockErrors.cost_price}
+                            helperText={receiveStockErrors.cost_price}
+                            fullWidth
+                            InputProps={{ startAdornment: <InputAdornment position="start">฿</InputAdornment> }}
+                        />
+                    </Grid>
+                </Grid>
+                <Grid container spacing={2}>
+                    <Grid item size={{ xs:6, sm:6 }} >
+                        <Autocomplete
+                            id="receive-location-autocomplete"
+                            options={locations}
+                            getOptionLabel={(option) => option.location_name}
+                            value={locations.find(l => l.id === receiveStockForm.location_id) || null}
+                            onChange={handleAutocompleteLocationChange}
+                            renderInput={(params) => (
+                                <TextField
+                                    {...params}
+                                    label="* ตำแหน่งเก็บ"
+                                    error={!!receiveStockErrors.location_id}
+                                    helperText={receiveStockErrors.location_id}
+                                />
+                            )}
+                        />
+                    </Grid>
+                    <Grid item size={{ xs:6, sm:6 }}>
+                        <Autocomplete
+                            id="receive-supplier-autocomplete"
+                            options={suppliers}
+                            getOptionLabel={(option) => option.supplier_name}
+                            value={suppliers.find(s => s.id === receiveStockForm.supplier_id) || null}
+                            onChange={handleAutocompleteSupplierChange}
+                            renderInput={(params) => (
+                                <TextField
+                                    {...params}
+                                    label="* ผู้จำหน่าย"
+                                    error={!!receiveStockErrors.supplier_id}
+                                    helperText={receiveStockErrors.supplier_id}
+                                />
+                            )}
+                        />
+                    </Grid>
+                </Grid>
+                <TextField
+                    label="เลขที่ล็อตผู้จำหน่าย (ถ้ามี)"
+                    name="supplier_lot_no"
+                    value={receiveStockForm.supplier_lot_no}
+                    onChange={handleReceiveStockFormChange}
+                    fullWidth
+                />
+            </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, bgcolor: '#f8f9fa' }}>
+            <Button onClick={() => setOpenReceiveStockDialog(false)} color="inherit">ยกเลิก</Button>
+            <Button onClick={handleSaveReceiveStock} variant="contained" color="primary">บันทึกการรับสินค้า</Button>
         </DialogActions>
       </Dialog>
 

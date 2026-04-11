@@ -8,6 +8,7 @@ import Pages_customer from "./pages/Pages_customer.jsx";
 import Pages_dashboard from "./pages/Pages_dashboard.jsx";
 import Pages_users from "./pages/Pages_users.jsx"; // NEW: นำเข้าหน้าจัดการผู้ใช้
 import Pages_StockHistory from "./pages/Pages_StockHistory.jsx";
+import Pages_InventoryBatches from './pages/Pages_InventoryBatches';
 
 // --- 1. นำเข้า ProtectedRoute ---
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
@@ -25,6 +26,7 @@ const App = () => {
           <Route path="/pos" element={<Pages_pos />} />
           <Route path="/history" element={<Pages_history />} />
           <Route path="/customers" element={<Pages_customer />} />
+          <Route path="/inventory-batches" element={<Pages_InventoryBatches />} /> 
           <Route path="/stock-history" element={<Pages_StockHistory />} />
           <Route path="/users" element={<Pages_users />} />
         </Route>
