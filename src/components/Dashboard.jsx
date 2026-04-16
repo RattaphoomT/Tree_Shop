@@ -148,7 +148,7 @@ const Dashboard = () => {
       if (kpiFilter === 'custom' && startDate && endDate) {
         const start = dayjs(startDate).format('YYYY-MM-DD');
         const end = dayjs(endDate).format('YYYY-MM-DD');
-        url += `?startDate=${start}&endDate=${end}`;
+        url += `?period=custom&startDate=${start}&endDate=${end}`; // Fix: Explicitly send period=custom
       } else if (kpiFilter !== 'custom') {
         url += `?period=${kpiFilter}`;
       } else {
@@ -158,9 +158,10 @@ const Dashboard = () => {
       }
       const response = await api.get(url);
       const data = response.data;
+
       setDashboardData(prevData => ({
         ...prevData,
-        ...data,
+        ...data
       }));
     } catch (err) {
       console.error("Error fetching data:", err);
@@ -428,7 +429,7 @@ const Dashboard = () => {
                         <Box sx={{ p: 3, borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 1 }}><DonutSmallIcon sx={{ color: theme.palette.secondary.main }} /><Box><Typography variant="h6" fontWeight="800">สัดส่วนสินค้าที่ขายได้</Typography><Typography variant="caption" color="text.secondary">แยกตามหมวดหมู่ (%)</Typography></Box></Box>
                         <Box sx={{ flex: 1, position: 'relative', width: '100%', minHeight: 0, p: 2 }}>
                             {dashboardData.categorySales && dashboardData.categorySales.length > 0 ? (
-                                <ResponsiveContainer width="90%" height="100%">
+                                <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
                                         <Pie data={dashboardData.categorySales} cx="50%" cy="45%" labelLine={false} outerRadius={110} innerRadius={50} dataKey="sold" nameKey="name" paddingAngle={2}>
                                             {dashboardData.categorySales.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
@@ -543,16 +544,23 @@ const Dashboard = () => {
                             {selectedOrder.items ? (
                                 <TableContainer component={Card} variant="outlined">
                                     <Table size="small">
-                                        <TableHead sx={{ bgcolor: '#eee' }}><TableRow><TableCell>สินค้า</TableCell><TableCell align="right">ราคา</TableCell><TableCell align="right">รวม</TableCell></TableRow></TableHead>
+                                        <TableHead sx={{ bgcolor: '#eee' }}><TableRow><TableCell>สินค้า</TableCell><TableCell align="right">ราคา</TableCell><TableCell align="right">รวม</TableCell><TableCell align="center">สถานะ</TableCell></TableRow></TableHead>
                                         <TableBody>
                                             {selectedOrder.items.map((item, idx) => (
                                                 <TableRow key={idx}>
                                                     <TableCell sx={{ borderBottom: 'none' }}>
-                                                        <Typography variant="body2" fontWeight="500">{item.product_name}</Typography>
-                                                        <Typography variant="caption" color="text.secondary">x{item.quantity} {item.sold_unit_name || ''}</Typography>
+                                                        <Typography variant="body2" fontWeight="500" sx={{ textDecoration: item.status === 'cancelled' ? 'line-through' : 'none', opacity: item.status === 'cancelled' ? 0.6 : 1 }}>
+                                                            {item.product_name}
+                                                        </Typography>
+                                                        <Typography variant="caption" color="text.secondary" sx={{ textDecoration: item.status === 'cancelled' ? 'line-through' : 'none', opacity: item.status === 'cancelled' ? 0.6 : 1 }}>
+                                                            x{item.quantity} {item.sold_unit_name || ''}
+                                                        </Typography>
                                                     </TableCell>
-                                                    <TableCell align="right" sx={{ borderBottom: 'none' }}>{Number(item.unit_price || 0).toLocaleString()}</TableCell>
-                                                    <TableCell align="right" sx={{ fontWeight: 'bold', borderBottom: 'none' }}>{Number(item.total_price || 0).toLocaleString()}</TableCell>
+                                                    <TableCell align="right" sx={{ borderBottom: 'none', textDecoration: item.status === 'cancelled' ? 'line-through' : 'none', opacity: item.status === 'cancelled' ? 0.6 : 1 }}>{Number(item.unit_price || 0).toLocaleString()}</TableCell>
+                                                    <TableCell align="right" sx={{ fontWeight: 'bold', borderBottom: 'none', textDecoration: item.status === 'cancelled' ? 'line-through' : 'none', opacity: item.status === 'cancelled' ? 0.6 : 1 }}>{Number(item.total_price || 0).toLocaleString()}</TableCell>
+                                                    <TableCell align="center" sx={{ borderBottom: 'none' }}>
+                                                        {item.status === 'cancelled' && <Chip label="ยกเลิก" color="error" size="small" />}
+                                                    </TableCell>
                                                 </TableRow>
                                             ))}
                                         </TableBody>

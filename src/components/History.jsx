@@ -169,6 +169,40 @@ const History = () => {
     setEditOpen(true);
   };
 
+  const handleCancelItem = (item) => {
+    Swal.fire({
+      title: 'ยืนยันการยกเลิกรายการ?',
+      html: `คุณต้องการยกเลิกรายการ <b>${item.product_name}</b> จำนวน <b>${item.quantity}</b> ชิ้น ใช่หรือไม่?<br/>สต็อกสินค้าจะถูกคืนเข้าระบบ`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'ใช่, ยกเลิกเลย',
+      cancelButtonText: 'ปิด',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          // The backend now returns the updated order object
+          const response = await api.delete(`/stock/order-item/${item.item_id}`);
+          
+          Swal.fire('สำเร็จ!', 'ยกเลิกรายการและคืนสต็อกเรียบร้อยแล้ว', 'success');
+
+          // --- NEW: Update state without closing dialog ---
+          // 1. Update the currently viewed order with the fresh data from the backend
+          setSelectedOrder(response.data.updatedOrder);
+
+          // 2. Refresh the main order list in the background
+          fetchOrders();
+          
+        } catch (error) {
+          console.error("Error cancelling item:", error);
+          const errorMessage = error.response?.data?.message || "ไม่สามารถยกเลิกรายการได้";
+          Swal.fire("เกิดข้อผิดพลาด", errorMessage, "error");
+        }
+      }
+    });
+  };
+
   const handleSaveEdit = async () => {
     if (!selectedOrder) return;
     try {
@@ -490,16 +524,40 @@ const History = () => {
                     {selectedOrder.items ? (
                         <TableContainer component={Paper} variant="outlined">
                           <Table size="small">
-                              <TableHead sx={{ bgcolor: '#eee' }}><TableRow><TableCell>สินค้า</TableCell><TableCell align="right">ราคา</TableCell><TableCell align="right">รวม</TableCell></TableRow></TableHead>
+                              <TableHead sx={{ bgcolor: '#eee' }}>
+                                <TableRow>
+                                  <TableCell>สินค้า</TableCell>
+                                  <TableCell align="right">ราคา</TableCell>
+                                  <TableCell align="right">รวม</TableCell>
+                                  <TableCell align="center">จัดการ</TableCell>
+                                </TableRow>
+                              </TableHead>
                               <TableBody>
                                   {selectedOrder.items.map((item, idx) => (
-                                      <TableRow key={idx}>
+                                      <TableRow key={item.item_id || idx}>
                                           <TableCell sx={{ borderBottom: 'none' }}>
-                                              <Typography variant="body2" fontWeight="500">{item.product_name}</Typography>
-                                              <Typography variant="caption" color="text.secondary">x{item.quantity} {item.sold_unit_name || ''}</Typography>
+                                              <Typography variant="body2" fontWeight="500">
+                                                {item.product_name}
+                                              </Typography>
+                                              <Typography variant="caption" color="text.secondary">
+                                                x{item.quantity} {item.sold_unit_name || ''}
+                                              </Typography>
                                           </TableCell>
-                                          <TableCell align="right" sx={{ borderBottom: 'none' }}>{Number(item.unit_price || 0).toLocaleString()}</TableCell>
-                                          <TableCell align="right" sx={{ fontWeight: 'bold', borderBottom: 'none' }}>{Number(item.total_price || 0).toLocaleString()}</TableCell>
+                                          <TableCell align="right" sx={{ borderBottom: 'none' }}>
+                                            {Number(item.unit_price || 0).toLocaleString()}
+                                          </TableCell>
+                                          <TableCell align="right" sx={{ fontWeight: 'bold', borderBottom: 'none' }}>
+                                            {Number(item.total_price || 0).toLocaleString()}
+                                          </TableCell>
+                                          <TableCell align="center" sx={{ borderBottom: 'none' }}>
+                                            {item.status === 'cancelled' ? (
+                                              <Typography variant="caption" color="error" fontWeight="bold">ถูกยกเลิก</Typography>
+                                            ) : selectedOrder.status !== 'cancelled' ? (
+                                              <Tooltip title="ยกเลิกรายการนี้">
+                                                <IconButton size="small" color="error" onClick={() => handleCancelItem(item)}><CancelOutlinedIcon fontSize="small" /></IconButton>
+                                              </Tooltip>
+                                            ) : null}
+                                          </TableCell>
                                       </TableRow>
                                   ))}
                               </TableBody>
