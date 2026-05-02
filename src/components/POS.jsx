@@ -49,6 +49,7 @@ import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import PrintIcon from '@mui/icons-material/Print';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import LockOpenIcon from '@mui/icons-material/LockOpen';
 
 // --- Customer Icons ---
 import PersonSearchIcon from '@mui/icons-material/PersonSearch';
@@ -64,6 +65,13 @@ const POS = () => {
 
   // --- Discount State ---
   const [discount, setDiscount] = useState(""); 
+
+  // --- Auth State for Discount (Password instead of PIN) ---
+  const [openAuthDialog, setOpenAuthDialog] = useState(false);
+  const [authCredentials, setAuthCredentials] = useState({ username: '', password: '' });
+  const [authError, setAuthError] = useState("");
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const [isDiscountAuthorized, setIsDiscountAuthorized] = useState(false);
 
   // --- Payment State ---
   const [openPayment, setOpenPayment] = useState(false);
@@ -113,7 +121,11 @@ const POS = () => {
         const userString = localStorage.getItem('user');
         if (userString) {
             try {
-                setCurrentUser(JSON.parse(userString));
+                const user = JSON.parse(userString);
+                setCurrentUser(user);
+                if (user.role !== 'Staff') {
+                    setIsDiscountAuthorized(true);
+                }
             } catch (parseError) {
                 console.error("Error parsing user data from localStorage:", parseError);
             }
@@ -174,6 +186,9 @@ const POS = () => {
       setChangeAmount(0);
       setSelectedCustomer(null);
       setCustomerSearchText("");
+      if (currentUser?.role === 'Staff') {
+        setIsDiscountAuthorized(false);
+      }
   }
 
   const handleAddToCart = (product) => {
@@ -309,6 +324,48 @@ const POS = () => {
           }
           return item;
       }));
+  };
+
+  const handleDiscountFocus = () => {
+    if (currentUser?.role === 'Staff' && !isDiscountAuthorized) {
+        if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+        }
+        setOpenAuthDialog(true);
+    }
+  };
+
+  const handleVerifyAuth = async () => {
+    if (!authCredentials.username || !authCredentials.password) {
+        setAuthError("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน");
+        return;
+    }
+    setIsAuthorizing(true);
+    setAuthError("");
+    try {
+        // Use the new endpoint for password verification
+        await api.post('/users/verify-auth', authCredentials);
+        setIsDiscountAuthorized(true);
+        setOpenAuthDialog(false);
+        setAuthCredentials({ username: '', password: '' });
+        showNotification("อนุมัติส่วนลดสำเร็จ!", "success");
+    } catch (error) {
+        const errorMessage = error.response?.data?.message || "การยืนยันตัวตนล้มเหลว";
+        setAuthError(errorMessage);
+    } finally {
+        setIsAuthorizing(false);
+    }
+  };
+
+  const handleAuthFormChange = (e) => {
+    setAuthCredentials({ ...authCredentials, [e.target.name]: e.target.value });
+  };
+
+  const handleCancelAuthorization = () => {
+    setOpenAuthDialog(false);
+    setAuthCredentials({ username: '', password: '' });
+    setAuthError("");
+    setDiscount(""); // Reset discount on cancel/close
   };
 
   const subtotal = cart.reduce(
@@ -458,7 +515,7 @@ const POS = () => {
           <TextField
             placeholder="ค้นหาชื่อสินค้า หรือ สแกนบาร์โค้ด..."
             size="small"
-            value={searchTerm}
+            value={searchTerm}ห
             onChange={(e) => setSearchTerm(e.target.value)}
             onKeyDown={handleScanBarcode}
             autoFocus
@@ -646,10 +703,21 @@ const POS = () => {
                     placeholder="0"
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
+                    onFocus={handleDiscountFocus}
+                    // Using readOnly allows the onFocus event to fire, which is needed to open the auth dialog.
+                    readOnly={currentUser?.role === 'Staff' && !isDiscountAuthorized}
                     type="number"
                     InputProps={{
                         startAdornment: <Typography variant="caption" sx={{mr:0.5}}>฿</Typography>,
-                        sx: { height: 30, width: 100, fontSize: '0.9rem', textAlign: 'right', '& input': { textAlign: 'right', p: 0.5 } }
+                        sx: { 
+                            height: 30, 
+                            width: 100, 
+                            fontSize: '0.9rem', 
+                            textAlign: 'right', 
+                            // Add a pointer cursor to indicate it's clickable for authorization
+                            '& input': { textAlign: 'right', p: 0.5, cursor: (currentUser?.role === 'Staff' && !isDiscountAuthorized) ? 'pointer' : 'text' },
+                            bgcolor: (currentUser?.role === 'Staff' && !isDiscountAuthorized) ? '#f0f0f0' : 'inherit',
+                        }
                     }}
                 />
             </Box>
@@ -756,6 +824,61 @@ const POS = () => {
                 {isProcessing ? <CircularProgress size={24} color="inherit" /> : `ยืนยัน (${paymentMethod === 'cash' ? 'เงินสด' : 'โอนเงิน'})`}
             </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* --- AUTHORIZATION DIALOG (Password instead of PIN) --- */}
+      <Dialog
+          open={openAuthDialog}
+          onClose={handleCancelAuthorization}
+          maxWidth="xs"
+          fullWidth
+          PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+          <DialogTitle sx={{ bgcolor: 'warning.main', color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <LockOpenIcon />
+              ต้องการสิทธิ์ในการให้ส่วนลด
+          </DialogTitle>
+          <DialogContent sx={{ p: 4 }}>
+              <Typography variant="body1" align="center" mb={3}>
+                  กรุณาให้ผู้จัดการหรือเจ้าของร้าน
+                  ป้อนชื่อผู้ใช้และรหัสผ่านเพื่ออนุมัติ
+              </Typography>
+              <Stack spacing={2}>
+                <TextField
+                    autoFocus
+                    margin="dense"
+                    id="auth-username"
+                    name="username"
+                    label="ชื่อผู้ใช้ (ผู้จัดการ/เจ้าของ)"
+                    type="text"
+                    fullWidth
+                    variant="outlined"
+                    value={authCredentials.username}
+                    onChange={handleAuthFormChange}
+                    error={!!authError}
+                />
+                <TextField
+                    margin="dense"
+                    id="auth-password"
+                    name="password"
+                    label="รหัสผ่าน"
+                    type="password"
+                    fullWidth
+                    variant="outlined"
+                    value={authCredentials.password}
+                    onChange={handleAuthFormChange}
+                    onKeyPress={(e) => { if (e.key === 'Enter') { handleVerifyAuth(); } }}
+                    error={!!authError}
+                    helperText={authError}
+                />
+              </Stack>
+          </DialogContent>
+          <DialogActions sx={{ p: 3 }}>
+              <Button onClick={handleCancelAuthorization} disabled={isAuthorizing}>ยกเลิก</Button>
+              <Button onClick={handleVerifyAuth} variant="contained" color="warning" disabled={isAuthorizing}>
+                  {isAuthorizing ? <CircularProgress size={24} /> : "ยืนยัน"}
+              </Button>
+          </DialogActions>
       </Dialog>
 
       {/* --- RECEIPT DIALOG --- */}
